@@ -1,9 +1,10 @@
 SRCS = sslscan.c
 BINPATH = /usr/bin/
 MANPATH = /usr/share/man/
+LIBS = -lssl -lcrypto
 
 all:
-	gcc -g -Wall -lssl -o sslscan $(SRCS) $(LDFLAGS) $(CFLAGS)
+	gcc -g -Wall $(CFLAGS) $(LDFLAGS) $(LIBS) -o sslscan $(SRCS)
 
 install:
 	cp sslscan $(BINPATH)
