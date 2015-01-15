@@ -71,17 +71,19 @@ const char *COL_BLUE = "";
 const char *COL_GREEN = "";
 #endif
 
+#define VERSION "1.8.3"
+
 
 const char *program_banner = "                   _\n"
                              "           ___ ___| |___  ___ __ _ _ __\n"
                              "          / __/ __| / __|/ __/ _` | '_ \\\n"
                              "          \\__ \\__ \\ \\__ \\ (_| (_| | | | |\n"
                              "          |___/___/_|___/\\___\\__,_|_| |_|\n\n"
-                             "                  Version 1.8.2\n"
+                             "                  Version " VERSION "\n"
                              "             http://www.titania.co.uk\n"
                              "        Copyright Ian Ventura-Whiting 2009\n";
-const char *program_version = "sslscan version 1.8.2\nhttp://www.titania.co.uk\nCopyright (C) Ian Ventura-Whiting 2009\n";
-const char *xml_version = "1.8.2";
+const char *program_version = "sslscan version " VERSION "\nhttp://www.titania.co.uk\nCopyright (C) Ian Ventura-Whiting 2009\n";
+const char *xml_version = VERSION;
 
 
 struct sslCipher
