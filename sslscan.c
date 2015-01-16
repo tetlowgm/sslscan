@@ -1227,16 +1227,12 @@ int main(int argc, char *argv[])
 			options.starttls = true;
 		}
 
-#ifndef OPENSSL_NO_SSL2
 		// SSL v2 only...
 		else if (strcmp("--ssl2", argv[argLoop]) == 0)
 			options.sslVersion = ssl_v2;
-#endif
-#ifndef OPENSSL_NO_SSL3_METHOD
 		// SSL v3 only...
 		else if (strcmp("--ssl3", argv[argLoop]) == 0)
 			options.sslVersion = ssl_v3;
-#endif
 		// TLS v1.0 only...
 		else if (strcmp("--tls1", argv[argLoop]) == 0)
 			options.sslVersion = tls_v1;
