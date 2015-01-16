@@ -2,6 +2,7 @@
  *   sslscan - A SSL cipher scanning tool                                  *
  *   Copyright 2007-2009 by Ian Ventura-Whiting (Fizz)                     *
  *   fizz@titania.co.uk                                                    *
+ *   Copyright 2015 by Gordon Tetlow                                       *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -81,7 +82,8 @@ const char *program_banner = "                   _\n"
                              "          |___/___/_|___/\\___\\__,_|_| |_|\n\n"
                              "                  Version " VERSION "\n"
                              "             http://www.titania.co.uk\n"
-                             "        Copyright Ian Ventura-Whiting 2009\n";
+                             "        Copyright Ian Ventura-Whiting 2009\n"
+                             "           Copyright Gordon Tetlow 2015\n";
 const char *program_version = "sslscan version " VERSION "\nhttp://www.titania.co.uk\nCopyright (C) Ian Ventura-Whiting 2009\n";
 const char *xml_version = VERSION;
 
