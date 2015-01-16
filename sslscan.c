@@ -32,6 +32,7 @@
  ***************************************************************************/
 
 // Includes...
+#include <getopt.h>
 #include <string.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -47,10 +48,8 @@
 #define false 0
 #define true 1
 
-#define mode_help 0
-#define mode_version 1
-#define mode_single 2
-#define mode_multiple 3
+#define mode_single 0
+#define mode_multiple 1
 
 #define BUFFERSIZE 1024
 
@@ -109,7 +108,6 @@ struct sslCheckOptions
 	int noFailed;
 	int starttls;
 	int sslVersion;
-	int targets;
 	int pout;
 	int sslbugs;
 	int http;
@@ -1152,6 +1150,51 @@ int testHost(struct sslCheckOptions *options)
 	return status;
 }
 
+static void
+usage(const char *binary)
+{
+	// Program version banner...
+	printf("%s%s%s\n", COL_BLUE, program_banner, RESET);
+	printf("SSLScan is a fast SSL port scanner. SSLScan connects to SSL\n");
+	printf("ports and determines what  ciphers are supported, which are\n");
+	printf("the servers preferred  ciphers,  which  SSL  protocols  are\n");
+	printf("supported  and   returns  the   SSL   certificate.   Client\n");
+	printf("certificates /  private key can be configured and output is\n");
+	printf("to text / XML.\n\n");
+	printf("%sCommand:%s\n", COL_BLUE, RESET);
+	printf("  %s%s [Options] [host:port | host]%s\n\n", COL_GREEN, binary, RESET);
+	printf("%sOptions:%s\n", COL_BLUE, RESET);
+	printf("  %s--targets=<file>%s     A file containing a list of hosts to\n", COL_GREEN, RESET);
+	printf("                       check.  Hosts can  be supplied  with\n");
+	printf("                       ports (i.e. host:port).\n");
+	printf("  %s--no-failed%s          List only accepted ciphers  (default\n", COL_GREEN, RESET);
+	printf("                       is to listing all ciphers).\n");
+	printf("  %s--ssl2%s               Only check SSLv2 ciphers.\n", COL_GREEN, RESET);
+	printf("  %s--ssl3%s               Only check SSLv3 ciphers.\n", COL_GREEN, RESET);
+	printf("  %s--tls1%s               Only check TLSv1.0 ciphers.\n", COL_GREEN, RESET);
+	printf("  %s--tls1.1%s             Only check TLSv1.1 ciphers.\n", COL_GREEN, RESET);
+	printf("  %s--tls1.2%s             Only check TLSv1.2 ciphers.\n", COL_GREEN, RESET);
+	printf("  %s--pk=<file>%s          A file containing the private key or\n", COL_GREEN, RESET);
+	printf("                       a PKCS#12  file containing a private\n");
+	printf("                       key/certificate pair (as produced by\n");
+	printf("                       MSIE and Netscape).\n");
+	printf("  %s--pkpass=<password>%s  The password for the private  key or\n", COL_GREEN, RESET);
+	printf("                       PKCS#12 file.\n");
+	printf("  %s--certs=<file>%s       A file containing PEM/ASN1 formatted\n", COL_GREEN, RESET);
+	printf("                       client certificates.\n");
+	printf("  %s--starttls%s           If a STARTTLS is required to kick an\n", COL_GREEN, RESET);
+	printf("                       SMTP service into action.\n");
+	printf("  %s--http%s               Test a HTTP connection.\n", COL_GREEN, RESET);
+	printf("  %s--bugs%s               Enable SSL implementation  bug work-\n", COL_GREEN, RESET);
+	printf("                       arounds.\n");
+	printf("  %s--xml=<file>%s         Output results to an XML file.\n", COL_GREEN, RESET);
+	printf("  %s--version%s            Display the program version.\n", COL_GREEN, RESET);
+	printf("  %s--help%s               Display the  help text  you are  now\n", COL_GREEN, RESET);
+	printf("                       reading.\n");
+	printf("%sExample:%s\n", COL_BLUE, RESET);
+	printf("  %s%s 127.0.0.1%s\n\n", COL_GREEN, binary, RESET);
+	exit(1);
+}
 
 int main(int argc, char *argv[])
 {
@@ -1159,135 +1202,111 @@ int main(int argc, char *argv[])
 	struct sslCheckOptions options;
 	struct sslCipher *sslCipherPointer;
 	int status;
-	int argLoop;
 	int tempInt;
 	int maxSize;
-	int xmlArg;
-	int mode = mode_help;
+	int mode = mode_single;
+	int ch;
 	FILE *targetsFile;
+	char *binary = NULL;
+	char *xmlfile = NULL;
+	char *targetfile = NULL;
 	char line[1024];
+
+	struct option opts[] = {
+		{ "bugs",	no_argument,		&options.sslbugs, true },
+		{ "certs",	required_argument,	NULL,	'c' },
+		{ "help",	no_argument,		NULL,	'h' },
+		{ "http",	no_argument,		&options.http, true },
+		{ "no-failed",	no_argument,		&options.noFailed, true },
+		{ "pipe",	no_argument,		NULL,	'p' },
+		{ "pk",		required_argument,	NULL,	'k' },
+		{ "pk-pass",	required_argument,	NULL,	'l' },
+		{ "ssl2",	no_argument,		&options.sslVersion, ssl_v2 },
+		{ "ssl3",	no_argument,		&options.sslVersion, ssl_v3 },
+		{ "starttls",	no_argument,		&options.starttls, true },
+		{ "targets",	required_argument,	NULL,	't' },
+		{ "tls1",	no_argument,		&options.sslVersion, tls_v1 },
+		{ "tls1.0",	no_argument,		&options.sslVersion, tls_v1 },
+		{ "tls1.1",	no_argument,		&options.sslVersion, tls_v11 },
+		{ "tls1.2",	no_argument,		&options.sslVersion, tls_v12 },
+		{ "version",	no_argument,		NULL,	'V' },
+		{ "xml",	required_argument,	NULL,	'x' },
+		{ NULL,		0,			NULL,	0 }
+	};
 
 	// Init...
 	memset(&options, 0, sizeof(struct sslCheckOptions));
 	options.port = 443;
-	xmlArg = 0;
 	strcpy(options.host, "127.0.0.1");
 	options.noFailed = false;
 	options.starttls = false;
 	options.sslVersion = ssl_all;
 	options.pout = false;
+	binary = argv[0];
 	SSL_library_init();
 
-	// Get program parameters
-	for (argLoop = 1; argLoop < argc; argLoop++)
+	while((ch = getopt_long(argc, argv, "Vhp", opts, NULL)) != -1)
+		switch(ch) {
+			case 'V':
+				printf("%s", program_version);
+				return 1;
+			case 'c':
+				options.clientCertsFile = optarg;
+				break;
+			case 'h':
+				usage(binary);
+				break;
+			case 'k':
+				options.privateKeyFile = optarg;
+				break;
+			case 'l':
+				options.privateKeyPassword = optarg;
+				break;
+			case 'p':
+				options.pout = true;
+				break;
+			case 't':
+				mode = mode_multiple;
+				targetfile = optarg;
+				break;
+			case 'x':
+				printf("Got XML file: %s\n", optarg);
+				xmlfile = optarg;
+				break;
+			default:
+				break;
+		}
+	argc -= optind;
+	argv += optind;
+
+	// Host (maybe port too)...
+	if ((mode == mode_single) && (argc == 1))
 	{
-		// Help
-		if (strcmp("--help", argv[argLoop]) == 0)
-			mode = mode_help;
-
-		// targets
-		else if ((strncmp("--targets=", argv[argLoop], 10) == 0) && (strlen(argv[argLoop]) > 10))
-		{
-			mode = mode_multiple;
-			options.targets = argLoop;
-		}
-
-		// Show only supported
-		else if (strcmp("--no-failed", argv[argLoop]) == 0)
-			options.noFailed = true;
-
-		// Version
-		else if (strcmp("--version", argv[argLoop]) == 0)
-			mode = mode_version;
-
-		// XML Output
-		else if (strncmp("--xml=", argv[argLoop], 6) == 0)
-			xmlArg = argLoop;
-
-		// P Output
-		else if (strcmp("-p", argv[argLoop]) == 0)
-			options.pout = true;
-
-		// Client Certificates
-		else if (strncmp("--certs=", argv[argLoop], 8) == 0)
-			options.clientCertsFile = argv[argLoop] +8;
-
-		// Private Key File
-		else if (strncmp("--pk=", argv[argLoop], 5) == 0)
-			options.privateKeyFile = argv[argLoop] +5;
-
-		// Private Key Password
-		else if (strncmp("--pkpass=", argv[argLoop], 9) == 0)
-			options.privateKeyPassword = argv[argLoop] +9;
-
-		// StartTLS...
-		else if (strcmp("--starttls", argv[argLoop]) == 0)
-		{
-			options.sslVersion = tls_v1;
-			options.starttls = true;
-		}
-
-		// SSL v2 only...
-		else if (strcmp("--ssl2", argv[argLoop]) == 0)
-			options.sslVersion = ssl_v2;
-		// SSL v3 only...
-		else if (strcmp("--ssl3", argv[argLoop]) == 0)
-			options.sslVersion = ssl_v3;
-		// TLS v1.0 only...
-		else if (strcmp("--tls1", argv[argLoop]) == 0)
-			options.sslVersion = tls_v1;
-
-		// TLS v1.0 only...
-		else if (strcmp("--tls1.0", argv[argLoop]) == 0)
-			options.sslVersion = tls_v1;
-
-		// TLS v1.1 only...
-		else if (strcmp("--tls1.1", argv[argLoop]) == 0)
-			options.sslVersion = tls_v11;
-
-		// TLS v1.2 only...
-		else if (strcmp("--tls1.2", argv[argLoop]) == 0)
-			options.sslVersion = tls_v12;
-
-		// SSL Bugs...
-		else if (strcmp("--bugs", argv[argLoop]) == 0)
-			options.sslbugs = 1;
-
-		// SSL HTTP Get...
-		else if (strcmp("--http", argv[argLoop]) == 0)
-			options.http = 1;
-
-		// Host (maybe port too)...
-		else if (argLoop + 1 == argc)
-		{
-			mode = mode_single;
-
-			// Get host...
-			tempInt = 0;
-			maxSize = strlen(argv[argLoop]);
-			while ((argv[argLoop][tempInt] != 0) && (argv[argLoop][tempInt] != ':'))
-				tempInt++;
-			argv[argLoop][tempInt] = 0;
-			strncpy(options.host, argv[argLoop], sizeof(options.host) -1);
-
-			// Get port (if it exists)...
+		// Get host...
+		tempInt = 0;
+		maxSize = strlen(argv[0]);
+		while ((argv[0][tempInt] != 0) && (argv[0][tempInt] != ':'))
 			tempInt++;
-			if (tempInt < maxSize)
-				options.port = atoi(argv[argLoop] + tempInt);
-		}
+		argv[0][tempInt] = 0;
+		strncpy(options.host, argv[0], sizeof(options.host) -1);
 
-		// Not too sure what the user is doing...
-		else
-			mode = mode_help;
-	}
+		// Get port (if it exists)...
+		tempInt++;
+		if (tempInt < maxSize)
+			options.port = atoi(argv[0] + tempInt);
+	} else if (mode == mode_multiple) { /* FALLTHROUGH */ }
+
+	// Not too sure what the user is doing...
+	else
+		usage(binary);
 
 	// Open XML file output...
-	if ((xmlArg > 0) && (mode != mode_help))
+	if (xmlfile != NULL)
 	{
-		options.xmlOutput = fopen(argv[xmlArg] + 6, "w");
+		options.xmlOutput = fopen(xmlfile, "w");
 		if (options.xmlOutput == NULL)
 		{
-			printf("%sERROR: Could not open XML output file %s.%s\n", COL_RED, argv[xmlArg] + 6, RESET);
+			printf("%sERROR: Could not open XML output file %s.%s\n", COL_RED, xmlfile, RESET);
 			exit(0);
 		}
 
@@ -1295,143 +1314,89 @@ int main(int argc, char *argv[])
 		fprintf(options.xmlOutput, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<document title=\"SSLScan Results\" version=\"%s\" web=\"http://www.titania.co.uk\">\n", xml_version);
 	}
 
-	switch (mode)
+	printf("%s%s%s", COL_BLUE, program_banner, RESET);
+
+	SSLeay_add_all_algorithms();
+	ERR_load_crypto_strings();
+
+	// Build a list of ciphers...
+	switch (options.sslVersion)
 	{
-		case mode_version:
-			printf("%s%s%s", COL_BLUE, program_version, RESET);
+		case ssl_all:
+			populateCipherList(&options, SSLv2_client_method());
+			populateCipherList(&options, SSLv3_client_method());
+			populateCipherList(&options, TLSv1_client_method());
+			populateCipherList(&options, TLSv1_1_client_method());
+			populateCipherList(&options, TLSv1_2_client_method());
 			break;
-
-		case mode_help:
-			// Program version banner...
-			printf("%s%s%s\n", COL_BLUE, program_banner, RESET);
-			printf("SSLScan is a fast SSL port scanner. SSLScan connects to SSL\n");
-			printf("ports and determines what  ciphers are supported, which are\n");
-			printf("the servers preferred  ciphers,  which  SSL  protocols  are\n");
-			printf("supported  and   returns  the   SSL   certificate.   Client\n");
-			printf("certificates /  private key can be configured and output is\n");
-			printf("to text / XML.\n\n");
-			printf("%sCommand:%s\n", COL_BLUE, RESET);
-			printf("  %s%s [Options] [host:port | host]%s\n\n", COL_GREEN, argv[0], RESET);
-			printf("%sOptions:%s\n", COL_BLUE, RESET);
-			printf("  %s--targets=<file>%s     A file containing a list of hosts to\n", COL_GREEN, RESET);
-			printf("                       check.  Hosts can  be supplied  with\n");
-			printf("                       ports (i.e. host:port).\n");
-			printf("  %s--no-failed%s          List only accepted ciphers  (default\n", COL_GREEN, RESET);
-			printf("                       is to listing all ciphers).\n");
-			printf("  %s--ssl2%s               Only check SSLv2 ciphers.\n", COL_GREEN, RESET);
-			printf("  %s--ssl3%s               Only check SSLv3 ciphers.\n", COL_GREEN, RESET);
-			printf("  %s--tls1%s               Only check TLSv1.0 ciphers.\n", COL_GREEN, RESET);
-			printf("  %s--tls1.1%s             Only check TLSv1.1 ciphers.\n", COL_GREEN, RESET);
-			printf("  %s--tls1.2%s             Only check TLSv1.2 ciphers.\n", COL_GREEN, RESET);
-			printf("  %s--pk=<file>%s          A file containing the private key or\n", COL_GREEN, RESET);
-			printf("                       a PKCS#12  file containing a private\n");
-			printf("                       key/certificate pair (as produced by\n");
-			printf("                       MSIE and Netscape).\n");
-			printf("  %s--pkpass=<password>%s  The password for the private  key or\n", COL_GREEN, RESET);
-			printf("                       PKCS#12 file.\n");
-			printf("  %s--certs=<file>%s       A file containing PEM/ASN1 formatted\n", COL_GREEN, RESET);
-			printf("                       client certificates.\n");
-			printf("  %s--starttls%s           If a STARTTLS is required to kick an\n", COL_GREEN, RESET);
-			printf("                       SMTP service into action.\n");
-			printf("  %s--http%s               Test a HTTP connection.\n", COL_GREEN, RESET);
-			printf("  %s--bugs%s               Enable SSL implementation  bug work-\n", COL_GREEN, RESET);
-			printf("                       arounds.\n");
-			printf("  %s--xml=<file>%s         Output results to an XML file.\n", COL_GREEN, RESET);
-			printf("  %s--version%s            Display the program version.\n", COL_GREEN, RESET);
-			printf("  %s--help%s               Display the  help text  you are  now\n", COL_GREEN, RESET);
-			printf("                       reading.\n");
-			printf("%sExample:%s\n", COL_BLUE, RESET);
-			printf("  %s%s 127.0.0.1%s\n\n", COL_GREEN, argv[0], RESET);
+		case ssl_v2:
+			populateCipherList(&options, SSLv2_client_method());
 			break;
-
-		// Check a single host/port ciphers...
-		case mode_single:
-		case mode_multiple:
-			printf("%s%s%s", COL_BLUE, program_banner, RESET);
-
-			SSLeay_add_all_algorithms();
-			ERR_load_crypto_strings();
-
-			// Build a list of ciphers...
-			switch (options.sslVersion)
-			{
-				case ssl_all:
-					populateCipherList(&options, SSLv2_client_method());
-					populateCipherList(&options, SSLv3_client_method());
-					populateCipherList(&options, TLSv1_client_method());
-					populateCipherList(&options, TLSv1_1_client_method());
-					populateCipherList(&options, TLSv1_2_client_method());
-					break;
-				case ssl_v2:
-					populateCipherList(&options, SSLv2_client_method());
-					break;
-				case ssl_v3:
-					populateCipherList(&options, SSLv3_client_method());
-					break;
-				case tls_v1:
-					populateCipherList(&options, TLSv1_client_method());
-					break;
-				case tls_v11:
-					populateCipherList(&options, TLSv1_1_client_method());
-					break;
-				case tls_v12:
-					populateCipherList(&options, TLSv1_2_client_method());
-					break;
-			}
-
-			// Do the testing...
-			if (mode == mode_single)
-				status = testHost(&options);
-			else
-			{
-				if (fileExists(argv[options.targets] + 10) == true)
-				{
-					// Open targets file...
-					targetsFile = fopen(argv[options.targets] + 10, "r");
-					if (targetsFile == NULL)
-						printf("%sERROR: Could not open targets file %s.%s\n", COL_RED, argv[options.targets] + 10, RESET);
-					else
-					{
-						readLine(targetsFile, line, sizeof(line));
-						while (feof(targetsFile) == 0)
-						{
-							if (strlen(line) != 0)
-							{
-								// Get host...
-								tempInt = 0;
-								while ((line[tempInt] != 0) && (line[tempInt] != ':'))
-									tempInt++;
-								line[tempInt] = 0;
-								strncpy(options.host, line, sizeof(options.host) -1);
-
-								// Get port (if it exists)...
-								tempInt++;
-								if (strlen(line + tempInt) > 0)
-									options.port = atoi(line + tempInt);
-
-								// Test the host...
-								status = testHost(&options);
-							}
-							readLine(targetsFile, line, sizeof(line));
-						}
-					}
-				}
-				else
-					printf("%sERROR: Targets file %s does not exist.%s\n", COL_RED, argv[options.targets] + 10, RESET);
-			}
-	
-			// Free Structures
-			while (options.ciphers != 0)
-			{
-				sslCipherPointer = options.ciphers->next;
-				free(options.ciphers);
-				options.ciphers = sslCipherPointer;
-			}
+		case ssl_v3:
+			populateCipherList(&options, SSLv3_client_method());
+			break;
+		case tls_v1:
+			populateCipherList(&options, TLSv1_client_method());
+			break;
+		case tls_v11:
+			populateCipherList(&options, TLSv1_1_client_method());
+			break;
+		case tls_v12:
+			populateCipherList(&options, TLSv1_2_client_method());
 			break;
 	}
 
+	// Do the testing...
+	if (mode == mode_single)
+		status = testHost(&options);
+	else
+	{
+		if (fileExists(targetfile) == true)
+		{
+			// Open targets file...
+			targetsFile = fopen(targetfile, "r");
+			if (targetsFile == NULL)
+				printf("%sERROR: Could not open targets file %s.%s\n", COL_RED, targetfile, RESET);
+			else
+			{
+				readLine(targetsFile, line, sizeof(line));
+				while (feof(targetsFile) == 0)
+				{
+					if (strlen(line) != 0)
+					{
+						// Get host...
+						tempInt = 0;
+						while ((line[tempInt] != 0) && (line[tempInt] != ':'))
+							tempInt++;
+						line[tempInt] = 0;
+						strncpy(options.host, line, sizeof(options.host) -1);
+
+						// Get port (if it exists)...
+						tempInt++;
+						if (strlen(line + tempInt) > 0)
+							options.port = atoi(line + tempInt);
+
+						// Test the host...
+						status = testHost(&options);
+					}
+					readLine(targetsFile, line, sizeof(line));
+				}
+			}
+		}
+		else
+			printf("%sERROR: Targets file %s does not exist.%s\n", COL_RED, targetfile, RESET);
+	}
+
+	// Free Structures
+	while (options.ciphers != 0)
+	{
+		sslCipherPointer = options.ciphers->next;
+		free(options.ciphers);
+		options.ciphers = sslCipherPointer;
+	}
+
 	// Close XML file, if required...
-	if ((xmlArg > 0) && (mode != mode_help))
+	if (xmlfile != NULL)
 	{
 		fprintf(options.xmlOutput, "</document>\n");
 		fclose(options.xmlOutput);
