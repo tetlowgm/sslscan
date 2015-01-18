@@ -1268,7 +1268,7 @@ int main(int argc, char *argv[])
 
 	// Init...
 	memset(&options, 0, sizeof(struct sslCheckOptions));
-	/* Some of these are already technically case due to the memset, seatbelts.... */
+	/* Some of these are already technically false due to the memset, seatbelts.... */
 	options.port = 443;
 	strcpy(options.host, "127.0.0.1");
 	options.failed = false;
