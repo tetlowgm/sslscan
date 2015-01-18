@@ -2,9 +2,9 @@ SRCS = sslscan.c
 OBJS = sslscan
 BINPATH = /usr/bin/
 MANPATH = /usr/share/man/
-CFLAGS = -I/opt/local/include
-LDFLAGS = -L/opt/local/lib
-LDLIBS = -lssl -lcrypto
+CFLAGS += -I/opt/local/include
+LDFLAGS += -L/opt/local/lib
+LDLIBS += -lssl -lcrypto
 
 all: sslscan
 
