@@ -1,20 +1,27 @@
-SRCS = sslscan.c
-OBJS = sslscan
-BINPATH = /usr/bin/
-MANPATH = /usr/share/man/
-CFLAGS += -I/opt/local/include
+PROG = sslscan
+SRCS = $(PROG).c
+OBJS = $(PROG).o
+MAN = $(PROG).1
+PREFIX ?= /usr/local
+BINPATH ?= $(PREFIX)/bin
+MANPATH ?= $(PREFIX)/man/man1
+CFLAGS += -Wall -I/opt/local/include
 LDFLAGS += -L/opt/local/lib
 LDLIBS += -lssl -lcrypto
 
-all: sslscan
+.PHONY: all install uninstall clean
+
+all: $(PROG)
+
+$(PROG): $(OBJS)
 
 install:
-	cp sslscan $(BINPATH)
-	cp sslscan.1 $(MANPATH)man1
+	install -m 0755 $(PROG) $(BINPATH)/$(PROG)
+	install -m 0644 $(MAN) $(MANPATH)/$(MAN)
 
 uninstall:
-	rm -f $(BINPATH)sslscan
-	rm -f $(MANPATH)man1/sslscan.1
+	rm -f $(BINPATH)/$(PROG)
+	rm -f $(MANPATH)/$(MAN)
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(PROG) $(OBJS)
