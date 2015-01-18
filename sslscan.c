@@ -927,6 +927,7 @@ int getCertificate(struct sslCheckOptions *options)
 													fprintf(options->xmlOutput, "   </pk>\n");
 												}
 												break;
+#ifndef OPENSSL_NO_EC
 											case EVP_PKEY_EC:
 												printf("    EC Public Key:\n");
 												if (options->xmlOutput != 0)
@@ -938,6 +939,7 @@ int getCertificate(struct sslCheckOptions *options)
 													fprintf(options->xmlOutput, "   </pk>\n");
 												}
 												break;
+#endif /* OPENSSL_NO_EC */
 											default:
 												printf("    Public Key: Unknown\n");
 												if (options->xmlOutput != 0)
