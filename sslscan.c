@@ -57,11 +57,24 @@
 #define BUFFERSIZE 1024
 
 #define ssl_all 0
+/* SSLv2 support is removed in 1.1.0 */
+#ifdef SSL_TXT_SSLV2
 #define ssl_v2 1
+#endif
+#ifdef SSL_TXT_SSLV3
 #define ssl_v3 2
+#endif
+#ifdef SSL_TXT_TLSV1
 #define tls_v1 3
+#endif
+/* TLSv1.1 appeared in 1.0.1 */
+#ifdef SSL_TXT_TLSV1_1
 #define tls_v11 4
+#endif
+/* TLSv1.2 appeared in 1.0.1 */
+#ifdef SSL_TXT_TLSV1_2
 #define tls_v12 5
+#endif
 
 // Colour Console Output...
 #if !defined(__WIN32__)
@@ -1112,31 +1125,52 @@ int testHost(struct sslCheckOptions *options)
 		switch (options->sslVersion)
 		{
 			case ssl_all:
-				status = defaultCipher(options, SSLv2_client_method());
+#ifdef SSL_TXT_SSLV2
+				if (status != false)
+					status = defaultCipher(options, SSLv2_client_method());
+#endif
+#ifdef SSL_TXT_SSLV3
 				if (status != false)
 					status = defaultCipher(options, SSLv3_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1
 				if (status != false)
 					status = defaultCipher(options, TLSv1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_1
 				if (status != false)
 					status = defaultCipher(options, TLSv1_1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_2
 				if (status != false)
 					status = defaultCipher(options, TLSv1_2_client_method());
+#endif
 				break;
+#ifdef SSL_TXT_SSLV2
 			case ssl_v2:
 				status = defaultCipher(options, SSLv2_client_method());
 				break;
+#endif
+#ifdef SSL_TXT_SSLV3
 			case ssl_v3:
 				status = defaultCipher(options, SSLv3_client_method());
 				break;
+#endif
+#ifdef SSL_TXT_TLSV1
 			case tls_v1:
 				status = defaultCipher(options, TLSv1_client_method());
 				break;
+#endif
+#ifdef SSL_TXT_TLSV1_1
 			case tls_v11:
 				status = defaultCipher(options, TLSv1_1_client_method());
 				break;
+#endif
+#ifdef SSL_TXT_TLSV1_2
 			case tls_v12:
 				status = defaultCipher(options, TLSv1_2_client_method());
 				break;
+#endif
 		}
 	}
 
@@ -1172,11 +1206,21 @@ usage(const char *binary)
 	printf("                       ports (i.e. host:port).\n");
 	printf("  %s--no-failed%s          List only accepted ciphers  (default\n", COL_GREEN, RESET);
 	printf("                       is to listing all ciphers).\n");
+#ifdef SSL_TXT_SSLV2
 	printf("  %s--ssl2%s               Only check SSLv2 ciphers.\n", COL_GREEN, RESET);
+#endif
+#ifdef SSL_TXT_SSLV3
 	printf("  %s--ssl3%s               Only check SSLv3 ciphers.\n", COL_GREEN, RESET);
+#endif
+#ifdef SSL_TXT_TLSV1
 	printf("  %s--tls1%s               Only check TLSv1.0 ciphers.\n", COL_GREEN, RESET);
+#endif
+#ifdef SSL_TXT_TLSV1_1
 	printf("  %s--tls1.1%s             Only check TLSv1.1 ciphers.\n", COL_GREEN, RESET);
+#endif
+#ifdef SSL_TXT_TLSV1_2
 	printf("  %s--tls1.2%s             Only check TLSv1.2 ciphers.\n", COL_GREEN, RESET);
+#endif
 	printf("  %s--pk=<file>%s          A file containing the private key or\n", COL_GREEN, RESET);
 	printf("                       a PKCS#12  file containing a private\n");
 	printf("                       key/certificate pair (as produced by\n");
@@ -1224,14 +1268,24 @@ int main(int argc, char *argv[])
 		{ "pipe",	no_argument,		NULL,	'p' },
 		{ "pk",		required_argument,	NULL,	'k' },
 		{ "pk-pass",	required_argument,	NULL,	'l' },
+#ifdef SSL_TXT_SSLV2
 		{ "ssl2",	no_argument,		&options.sslVersion, ssl_v2 },
+#endif
+#ifdef SSL_TXT_SSLV3
 		{ "ssl3",	no_argument,		&options.sslVersion, ssl_v3 },
+#endif
 		{ "starttls",	no_argument,		&options.starttls, true },
 		{ "targets",	required_argument,	NULL,	't' },
+#ifdef SSL_TXT_TLSV1
 		{ "tls1",	no_argument,		&options.sslVersion, tls_v1 },
 		{ "tls1.0",	no_argument,		&options.sslVersion, tls_v1 },
+#endif
+#ifdef SSL_TXT_TLSV1_1
 		{ "tls1.1",	no_argument,		&options.sslVersion, tls_v11 },
+#endif
+#ifdef SSL_TXT_TLSV1_2
 		{ "tls1.2",	no_argument,		&options.sslVersion, tls_v12 },
+#endif
 		{ "version",	no_argument,		NULL,	'V' },
 		{ "xml",	required_argument,	NULL,	'x' },
 		{ NULL,		0,			NULL,	0 }
@@ -1326,27 +1380,47 @@ int main(int argc, char *argv[])
 	switch (options.sslVersion)
 	{
 		case ssl_all:
+#ifdef SSL_TXT_SSLV2
 			populateCipherList(&options, SSLv2_client_method());
+#endif
+#ifdef SSL_TXT_SSLV3
 			populateCipherList(&options, SSLv3_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1
 			populateCipherList(&options, TLSv1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_1
 			populateCipherList(&options, TLSv1_1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_2
 			populateCipherList(&options, TLSv1_2_client_method());
+#endif
 			break;
+#ifdef SSL_TXT_SSLV2
 		case ssl_v2:
 			populateCipherList(&options, SSLv2_client_method());
 			break;
+#endif
+#ifdef SSL_TXT_SSLV3
 		case ssl_v3:
 			populateCipherList(&options, SSLv3_client_method());
 			break;
+#endif
+#ifdef SSL_TXT_TLSV1
 		case tls_v1:
 			populateCipherList(&options, TLSv1_client_method());
 			break;
+#endif
+#ifdef SSL_TXT_TLSV1_1
 		case tls_v11:
 			populateCipherList(&options, TLSv1_1_client_method());
 			break;
+#endif
+#ifdef SSL_TXT_TLSV1_2
 		case tls_v12:
 			populateCipherList(&options, TLSv1_2_client_method());
 			break;
+#endif
 	}
 
 	// Do the testing...
