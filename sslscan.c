@@ -32,19 +32,17 @@
  ***************************************************************************/
 
 // Includes...
-#include <getopt.h>
-#include <string.h>
-#include <netdb.h>
-#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #ifdef __FreeBSD__
 #include <netinet/in.h>
 #endif
-#include <sys/stat.h>
-#include <sys/socket.h>
+
+#include <getopt.h>
+#include <netdb.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/pkcs12.h>
-#include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 // Defines...
@@ -56,8 +54,10 @@
 
 #define BUFFERSIZE 1024
 
-/* OpenSSL 1.0.0 introduce const qualifiers for SSL_METHOD. Try
- * to surpress warnings for it for both versions. */
+/*
+ * OpenSSL 1.0.0 introduce const qualifiers for SSL_METHOD. Try
+ * to surpress warnings for it for both versions.
+ */
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
 #define SSL_CONST const
 #else
