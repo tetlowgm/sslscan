@@ -46,6 +46,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/x509v3.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #define mode_single 0
 #define mode_multiple 1
