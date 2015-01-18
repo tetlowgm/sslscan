@@ -56,6 +56,14 @@
 
 #define BUFFERSIZE 1024
 
+/* OpenSSL 1.0.0 introduce const qualifiers for SSL_METHOD. Try
+ * to surpress warnings for it for both versions. */
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
+#define SSL_CONST const
+#else
+#define SSL_CONST
+#endif
+
 #define ssl_all 0
 /* SSLv2 support is removed in 1.1.0 */
 #ifdef SSL_TXT_SSLV2
@@ -112,7 +120,7 @@ struct sslCipher
 	char *version;
 	int bits;
 	char description[512];
-	const SSL_METHOD *sslMethod;
+	SSL_CONST SSL_METHOD *sslMethod;
 	struct sslCipher *next;
 };
 
@@ -145,7 +153,7 @@ struct sslCheckOptions
 
 
 // Adds Ciphers to the Cipher List structure
-int populateCipherList(struct sslCheckOptions *options, const SSL_METHOD *sslMethod)
+int populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
 	int returnCode = true;
@@ -620,7 +628,7 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 
 
 // Test for prefered ciphers
-int defaultCipher(struct sslCheckOptions *options, const SSL_METHOD *sslMethod)
+int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
 	int cipherStatus;
@@ -726,7 +734,7 @@ int getCertificate(struct sslCheckOptions *options)
 	BIO *fileBIO = NULL;
 	X509 *x509Cert = NULL;
 	EVP_PKEY *publicKey = NULL;
-	const SSL_METHOD *sslMethod = NULL;
+	SSL_CONST SSL_METHOD *sslMethod = NULL;
 	ASN1_OBJECT *asn1Object = NULL;
 	X509_EXTENSION *extension = NULL;
 	char buffer[1024];
