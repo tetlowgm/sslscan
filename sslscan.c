@@ -1196,58 +1196,41 @@ int testHost(struct sslCheckOptions *options)
 }
 
 static void
-usage(const char *binary)
+usage(void)
 {
-	// Program version banner...
-	printf("%s%s%s\n", COL_BLUE, program_banner, RESET);
-	printf("SSLScan is a fast SSL port scanner. SSLScan connects to SSL\n");
-	printf("ports and determines what  ciphers are supported, which are\n");
-	printf("the servers preferred  ciphers,  which  SSL  protocols  are\n");
-	printf("supported  and   returns  the   SSL   certificate.   Client\n");
-	printf("certificates /  private key can be configured and output is\n");
-	printf("to text / XML.\n\n");
-	printf("%sCommand:%s\n", COL_BLUE, RESET);
-	printf("  %s%s [Options] [host:port | host]%s\n\n", COL_GREEN, binary, RESET);
-	printf("%sOptions:%s\n", COL_BLUE, RESET);
-	printf("  %s--targets=<file>%s     A file containing a list of hosts to\n", COL_GREEN, RESET);
-	printf("                       check.  Hosts can  be supplied  with\n");
-	printf("                       ports (i.e. host:port).\n");
-	printf("  %s--no-failed%s          List only accepted ciphers  (default\n", COL_GREEN, RESET);
-	printf("                       is to listing all ciphers).\n");
+	fprintf(stderr, "Usage: sslscan [options] [host:port | host]\n\n");
+	fprintf(stderr, "Options:\n");
+	fprintf(stderr, "  --targets=<file>     A file containing a list of hosts to check. Hosts can\n");
+	fprintf(stderr, "                       be supplied with ports (i.e. host:port).\n");
+	fprintf(stderr, "  --no-failed          List only accepted ciphers (default lists all ciphers).\n");
 #ifdef SSL_TXT_SSLV2
-	printf("  %s--ssl2%s               Only check SSLv2 ciphers.\n", COL_GREEN, RESET);
+	fprintf(stderr, "  --ssl2               Only check SSLv2 ciphers.\n");
 #endif
 #ifdef SSL_TXT_SSLV3
-	printf("  %s--ssl3%s               Only check SSLv3 ciphers.\n", COL_GREEN, RESET);
+	fprintf(stderr, "  --ssl3               Only check SSLv3 ciphers.\n");
 #endif
 #ifdef SSL_TXT_TLSV1
-	printf("  %s--tls1%s               Only check TLSv1.0 ciphers.\n", COL_GREEN, RESET);
+	fprintf(stderr, "  --tls1               Only check TLSv1.0 ciphers.\n");
 #endif
 #ifdef SSL_TXT_TLSV1_1
-	printf("  %s--tls1.1%s             Only check TLSv1.1 ciphers.\n", COL_GREEN, RESET);
+	fprintf(stderr, "  --tls1.1             Only check TLSv1.1 ciphers.\n");
 #endif
 #ifdef SSL_TXT_TLSV1_2
-	printf("  %s--tls1.2%s             Only check TLSv1.2 ciphers.\n", COL_GREEN, RESET);
+	fprintf(stderr, "  --tls1.2             Only check TLSv1.2 ciphers.\n");
 #endif
-	printf("  %s--pk=<file>%s          A file containing the private key or\n", COL_GREEN, RESET);
-	printf("                       a PKCS#12  file containing a private\n");
-	printf("                       key/certificate pair (as produced by\n");
-	printf("                       MSIE and Netscape).\n");
-	printf("  %s--pkpass=<password>%s  The password for the private  key or\n", COL_GREEN, RESET);
-	printf("                       PKCS#12 file.\n");
-	printf("  %s--certs=<file>%s       A file containing PEM/ASN1 formatted\n", COL_GREEN, RESET);
-	printf("                       client certificates.\n");
-	printf("  %s--starttls%s           If a STARTTLS is required to kick an\n", COL_GREEN, RESET);
-	printf("                       SMTP service into action.\n");
-	printf("  %s--http%s               Test a HTTP connection.\n", COL_GREEN, RESET);
-	printf("  %s--bugs%s               Enable SSL implementation  bug work-\n", COL_GREEN, RESET);
-	printf("                       arounds.\n");
-	printf("  %s--xml=<file>%s         Output results to an XML file.\n", COL_GREEN, RESET);
-	printf("  %s--version%s            Display the program version.\n", COL_GREEN, RESET);
-	printf("  %s--help%s               Display the  help text  you are  now\n", COL_GREEN, RESET);
-	printf("                       reading.\n");
-	printf("%sExample:%s\n", COL_BLUE, RESET);
-	printf("  %s%s 127.0.0.1%s\n\n", COL_GREEN, binary, RESET);
+	fprintf(stderr, "  --pk=<file>          A file containing the private key or a PKCS#12 file\n");
+	fprintf(stderr, "                       containing a private key/certificate pair.\n");
+	fprintf(stderr, "  --pkpass=<password>  The password for the private key or PKCS#12 file.\n");
+	fprintf(stderr, "  --certs=<file>       A file containing PEM/ASN.1 client certificates.\n");
+	fprintf(stderr, "  --starttls           If a STARTTLS is required to kick an SMTP service\n");
+	fprintf(stderr, "                       into action.\n");
+	fprintf(stderr, "  --http               Test an HTTP connection.\n");
+	fprintf(stderr, "  --bugs               Enable SSL implementation bug work-arounds.\n");
+	fprintf(stderr, "  --xml=<file>         Output results to an XML file.\n");
+	fprintf(stderr, "  --version            Display the program version.\n");
+	fprintf(stderr, "  --help               Display the help text you are now reading.\n");
+	fprintf(stderr, "\nExample:\n");
+	fprintf(stderr, "  sslscan 127.0.0.1\n");
 	exit(1);
 }
 
@@ -1262,7 +1245,6 @@ int main(int argc, char *argv[])
 	int mode = mode_single;
 	int ch;
 	FILE *targetsFile;
-	char *binary = NULL;
 	char *xmlfile = NULL;
 	char *targetfile = NULL;
 	char line[1024];
@@ -1307,19 +1289,18 @@ int main(int argc, char *argv[])
 	options.starttls = false;
 	options.sslVersion = ssl_all;
 	options.pout = false;
-	binary = argv[0];
 	SSL_library_init();
 
 	while((ch = getopt_long(argc, argv, "Vhp", opts, NULL)) != -1)
 		switch(ch) {
 			case 'V':
-				printf("%s", program_version);
+				fprintf(stderr, "%s", program_version);
 				return 1;
 			case 'c':
 				options.clientCertsFile = optarg;
 				break;
 			case 'h':
-				usage(binary);
+				usage();
 				break;
 			case 'k':
 				options.privateKeyFile = optarg;
@@ -1363,7 +1344,7 @@ int main(int argc, char *argv[])
 
 	// Not too sure what the user is doing...
 	else
-		usage(binary);
+		usage();
 
 	// Open XML file output...
 	if (xmlfile != NULL)
