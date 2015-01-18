@@ -1,10 +1,12 @@
 SRCS = sslscan.c
+OBJS = sslscan
 BINPATH = /usr/bin/
 MANPATH = /usr/share/man/
-LIBS = -lssl -lcrypto
+CFLAGS = -I/opt/local/include
+LDFLAGS = -L/opt/local/lib
+LDLIBS = -lssl -lcrypto
 
-all:
-	gcc -g -Wall $(CFLAGS) $(LDFLAGS) $(LIBS) -o sslscan $(SRCS)
+all: sslscan
 
 install:
 	cp sslscan $(BINPATH)
@@ -15,4 +17,4 @@ uninstall:
 	rm -f $(MANPATH)man1/sslscan.1
 
 clean:
-	rm -f sslscan
+	rm -f $(OBJS)
