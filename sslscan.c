@@ -45,10 +45,7 @@
 #include <openssl/ssl.h>
 #include <openssl/pkcs12.h>
 #include <openssl/x509v3.h>
-
-// Defines...
-#define false 0
-#define true 1
+#include <stdbool.h>
 
 #define mode_single 0
 #define mode_multiple 1
@@ -116,12 +113,13 @@ struct sslCheckOptions
 	// Program Options...
 	char host[512];
 	int port;
-	int noFailed;
-	int starttls;
+	bool failed;
+	bool starttls;
 	int sslVersion;
-	int pout;
-	int sslbugs;
-	int http;
+	bool pout;
+	bool sslbugs;
+	bool http;
+	bool printcert;
 
 	// File Handles...
 	FILE *xmlOutput;
@@ -143,7 +141,7 @@ struct sslCheckOptions
 int populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
-	int returnCode = true;
+	bool returnCode = true;
 	struct sslCipher *sslCipherPointer;
 	int loop;
 	STACK_OF(SSL_CIPHER) *cipherList;
@@ -284,7 +282,7 @@ int tcpConnect(struct sslCheckOptions *options)
 	}
 
 	// If STARTTLS is required...
-	if (options->starttls == true)
+	if (options->starttls)
 	{
 		memset(buffer, 0, BUFFERSIZE);
 		recv(socketDescriptor, buffer, BUFFERSIZE - 1, 0);
@@ -329,10 +327,10 @@ static int password_callback(char *buf, int size, int rwflag, void *userdata)
 
 
 // Load client certificates/private keys...
-int loadCerts(struct sslCheckOptions *options)
+bool loadCerts(struct sslCheckOptions *options)
 {
 	// Variables...
-	int status = 1;
+	bool status = true;
 	PKCS12 *pk12 = NULL;
 	FILE *pk12File = NULL;
 	X509 *cert = NULL;
@@ -357,13 +355,13 @@ int loadCerts(struct sslCheckOptions *options)
 				if (!SSL_CTX_use_certificate_chain_file(options->ctx, options->clientCertsFile))
 				{
 					fprintf(stderr, "Could not configure certificate(s).\n");
-					status = 0;
+					status = false;
 				}
 			}
 		}
 
 		// Load PKey...
-		if (status != 0)
+		if (status)
 		{
 			if (!SSL_CTX_use_PrivateKey_file(options->ctx, options->privateKeyFile, SSL_FILETYPE_PEM))
 			{
@@ -374,7 +372,7 @@ int loadCerts(struct sslCheckOptions *options)
 						if (!SSL_CTX_use_RSAPrivateKey_file(options->ctx, options->privateKeyFile, SSL_FILETYPE_ASN1))
 						{
 							fprintf(stderr, "Could not configure private key.\n");
-							status = 0;
+							status = false;
 						}
 					}
 				}
@@ -391,26 +389,26 @@ int loadCerts(struct sslCheckOptions *options)
 			pk12 = d2i_PKCS12_fp(pk12File, NULL);
 			if (!pk12)
 			{
-				status = 0;
+				status = false;
 				fprintf(stderr, "Could not read PKCS#12 file.\n");
 			}
 			else
 			{
 				if (!PKCS12_parse(pk12, options->privateKeyPassword, &pkey, &cert, &ca))
 				{
-					status = 0;
+					status = false;
 					fprintf(stderr, "Error parsing PKCS#12. Are you sure that password was correct?\n");
 				}
 				else
 				{
 					if (!SSL_CTX_use_certificate(options->ctx, cert))
 					{
-						status = 0;
+						status = false;
 						fprintf(stderr, "Could not configure certificate.\n");
 					}
 					if (!SSL_CTX_use_PrivateKey(options->ctx, pkey))
 					{
-						status = 0;
+						status = false;
 						fprintf(stderr, "Could not configure private key.\n");
 					}
 				}
@@ -421,12 +419,12 @@ int loadCerts(struct sslCheckOptions *options)
 		else
 		{
 			fprintf(stderr, "Could not open PKCS#12 file.\n");
-			status = 0;
+			status = false;
 		}
 	}
 
 	// Check Cert/Key...
-	if (status != 0)
+	if (status)
 	{
 		if (!SSL_CTX_check_private_key(options->ctx))
 		{
@@ -442,11 +440,11 @@ int loadCerts(struct sslCheckOptions *options)
 
 
 // Test a cipher...
-int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
+bool testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
 {
 	// Variables...
 	int cipherStatus;
-	int status = true;
+	bool status = true;
 	int socketDescriptor = 0;
 	SSL *ssl = NULL;
 	BIO *cipherConnectionBio;
@@ -480,7 +478,7 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 				cipherStatus = SSL_connect(ssl);
 
 				// Show Cipher Status
-				if (!((options->noFailed == true) && (cipherStatus != 1)))
+				if ((options->failed) || (cipherStatus == 1))
 				{
 					if (options->xmlOutput != 0)
 						fprintf(options->xmlOutput, "  <cipher status=\"");
@@ -488,11 +486,11 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 					{
 						if (options->xmlOutput != 0)
 							fprintf(options->xmlOutput, "accepted\"");
-						if (options->pout == true)
+						if (options->pout)
 							printf("|| Accepted || ");
 						else
 							printf("    Accepted  ");
-						if (options->http == true)
+						if (options->http)
 						{
 
 							// Stdout BIO...
@@ -511,7 +509,7 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 								buffer[loop] = 0;
 
 								// Output HTTP code...
-								if (options->pout == true)
+								if (options->pout)
 									printf("%s || ", buffer + 9);
 								else
 								{
@@ -529,7 +527,7 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 							else
 							{
 								// Output HTTP code...
-								if (options->pout == true)
+								if (options->pout)
 									printf("|| || ");
 								else
 									printf("                 ");
@@ -540,16 +538,16 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 					{
 						if (options->xmlOutput != 0)
 							fprintf(options->xmlOutput, "rejected\"");
-						if (options->http == true)
+						if (options->http)
 						{
-							if (options->pout == true)
+							if (options->pout)
 								printf("|| Rejected || N/A || ");
 							else
 								printf("    Rejected  N/A              ");
 						}
 						else
 						{
-							if (options->pout == true)
+							if (options->pout)
 								printf("|| Rejected || ");
 							else
 								printf("    Rejected  ");
@@ -559,16 +557,16 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 					{
 						if (options->xmlOutput != 0)
 							fprintf(options->xmlOutput, "failed\"");
-						if (options->http == true)
+						if (options->http)
 						{
-							if (options->pout == true)
+							if (options->pout)
 								printf("|| Failed || N/A || ");
 							else
 								printf("    Failed    N/A              ");
 						}
 						else
 						{
-							if (options->pout == true)
+							if (options->pout)
 								printf("|| Failed || ");
 							else
 								printf("    Failed    ");
@@ -577,7 +575,7 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 					if (options->xmlOutput != 0)
 						fprintf(options->xmlOutput, " sslversion=\"%s\" bits=\"%d\" cipher=\"%s\" />\n",
 							SSL_get_version(ssl), sslCipherPointer->bits, sslCipherPointer->name);
-					if (options->pout == true)
+					if (options->pout)
 						printf("%s || %d || %s ||\n", SSL_get_version(ssl), sslCipherPointer->bits, sslCipherPointer->name);
 					else
 						printf("%-7s  %3d bits  %s\n", SSL_get_version(ssl), sslCipherPointer->bits, sslCipherPointer->name);
@@ -619,7 +617,7 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 {
 	// Variables...
 	int cipherStatus;
-	int status = true;
+	bool status = true;
 	int socketDescriptor = 0;
 	SSL *ssl = NULL;
 	BIO *cipherConnectionBio;
@@ -640,7 +638,7 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 				if ((options->clientCertsFile != 0) || (options->privateKeyFile != 0))
 					status = loadCerts(options);
 
-				if (status == true)
+				if (status)
 				{
 					// Create SSL object...
 					ssl = SSL_new(options->ctx);
@@ -660,7 +658,7 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 								fprintf(options->xmlOutput, "  <defaultcipher sslversion=\"%s\" bits=\"%d\" cipher=\"%s\" />\n",
 									SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), SSL_get_cipher_name(ssl));
 
-							if (options->pout == true)
+							if (options->pout)
 								printf("|| %s || %d || %s ||\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), SSL_get_cipher_name(ssl));
 							else
 								printf("    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), SSL_get_cipher_name(ssl));
@@ -709,11 +707,11 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 
 
 // Get certificate...
-int getCertificate(struct sslCheckOptions *options)
+bool getCertificate(struct sslCheckOptions *options)
 {
 	// Variables...
 	int cipherStatus = 0;
-	int status = true;
+	bool status = true;
 	int socketDescriptor = 0;
 	SSL *ssl = NULL;
 	BIO *cipherConnectionBio = NULL;
@@ -748,7 +746,7 @@ int getCertificate(struct sslCheckOptions *options)
 				if ((options->clientCertsFile != 0) || (options->privateKeyFile != 0))
 					status = loadCerts(options);
 
-				if (status == true)
+				if (status)
 				{
 					// Create SSL object...
 					ssl = SSL_new(options->ctx);
@@ -1046,11 +1044,11 @@ int getCertificate(struct sslCheckOptions *options)
 
 
 // Test a single host and port for ciphers...
-int testHost(struct sslCheckOptions *options)
+bool testHost(struct sslCheckOptions *options)
 {
 	// Variables...
 	struct sslCipher *sslCipherPointer;
-	int status = true;
+	bool status = true;
 
 	// Resolve Host Name
 	options->hostStruct = gethostbyname(options->host);
@@ -1072,12 +1070,12 @@ int testHost(struct sslCheckOptions *options)
 	// Test supported ciphers...
 	printf("\nTesting SSL server %s on port %d\n\n", options->host, options->port);
 	printf("  Supported Server Cipher(s):\n");
-	if ((options->http == true) && (options->pout == true))
+	if ((options->http) && (options->pout))
 		printf("|| Status || HTTP Code || Version || Bits || Cipher ||\n");
-	else if (options->pout == true)
+	else if (options->pout)
 		printf("|| Status || Version || Bits || Cipher ||\n");
 	sslCipherPointer = options->ciphers;
-	while ((sslCipherPointer != 0) && (status == true))
+	while ((sslCipherPointer != 0) && status)
 	{
 
 		// Setup Context Object...
@@ -1096,7 +1094,7 @@ int testHost(struct sslCheckOptions *options)
 				status = loadCerts(options);
 
 			// Test
-			if (status == true)
+			if (status)
 				status = testCipher(options, sslCipherPointer);
 
 			// Free CTX Object
@@ -1113,34 +1111,29 @@ int testHost(struct sslCheckOptions *options)
 		sslCipherPointer = sslCipherPointer->next;
 	}
 
-	if (status == true)
+	if (status)
 	{
 		// Test preferred ciphers...
 		printf("\n  Preferred Server Cipher(s):\n");
-		if (options->pout == true)
+		if (options->pout)
 			printf("|| Version || Bits || Cipher ||\n");
 		switch (options->sslVersion)
 		{
 			case ssl_all:
 #ifdef SSL_TXT_SSLV2
-				if (status != false)
-					status = defaultCipher(options, SSLv2_client_method());
+				status = status ? defaultCipher(options, SSLv2_client_method()) : false;
 #endif
 #ifdef SSL_TXT_SSLV3
-				if (status != false)
-					status = defaultCipher(options, SSLv3_client_method());
+				status = status ? defaultCipher(options, SSLv3_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1
-				if (status != false)
-					status = defaultCipher(options, TLSv1_client_method());
+				status = status ? defaultCipher(options, TLSv1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_1
-				if (status != false)
-					status = defaultCipher(options, TLSv1_1_client_method());
+				status = status ? defaultCipher(options, TLSv1_1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_2
-				if (status != false)
-					status = defaultCipher(options, TLSv1_2_client_method());
+				status = status ? defaultCipher(options, TLSv1_2_client_method()) : false;
 #endif
 				break;
 #ifdef SSL_TXT_SSLV2
@@ -1171,7 +1164,7 @@ int testHost(struct sslCheckOptions *options)
 		}
 	}
 
-	if (status == true)
+	if (status && options->printcert)
 	{
 		status = getCertificate(options);
 	}
@@ -1191,7 +1184,8 @@ usage(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  --targets=<file>     A file containing a list of hosts to check. Hosts can\n");
 	fprintf(stderr, "                       be supplied with ports (i.e. host:port).\n");
-	fprintf(stderr, "  --no-failed          List only accepted ciphers (default lists all ciphers).\n");
+	fprintf(stderr, "  --show-failed        List only all ciphers (default lists accepted ciphers).\n");
+	fprintf(stderr, "  --show-cert          Print SSL certificate information.\n");
 #ifdef SSL_TXT_SSLV2
 	fprintf(stderr, "  --ssl2               Only check SSLv2 ciphers.\n");
 #endif
@@ -1228,7 +1222,7 @@ int main(int argc, char *argv[])
 	// Variables...
 	struct sslCheckOptions options;
 	struct sslCipher *sslCipherPointer;
-	int status;
+	bool status = true;
 	int tempInt;
 	int maxSize;
 	int mode = mode_single;
@@ -1239,11 +1233,13 @@ int main(int argc, char *argv[])
 	char line[1024];
 
 	struct option opts[] = {
-		{ "bugs",	no_argument,		&options.sslbugs, true },
+		{ "bugs",	no_argument,		(int *)&options.sslbugs, true },
 		{ "certs",	required_argument,	NULL,	'c' },
 		{ "help",	no_argument,		NULL,	'h' },
-		{ "http",	no_argument,		&options.http, true },
-		{ "no-failed",	no_argument,		&options.noFailed, true },
+		{ "http",	no_argument,		(int *)&options.http, true },
+		{ "no-failed",	no_argument,		(int *)&options.failed, false },
+		{ "show-failed", no_argument,		(int *)&options.failed, true },
+		{ "show-cert", no_argument,		(int *)&options.printcert, true },
 		{ "pipe",	no_argument,		NULL,	'p' },
 		{ "pk",		required_argument,	NULL,	'k' },
 		{ "pk-pass",	required_argument,	NULL,	'l' },
@@ -1253,7 +1249,7 @@ int main(int argc, char *argv[])
 #ifdef SSL_TXT_SSLV3
 		{ "ssl3",	no_argument,		&options.sslVersion, ssl_v3 },
 #endif
-		{ "starttls",	no_argument,		&options.starttls, true },
+		{ "starttls",	no_argument,		(int *)&options.starttls, true },
 		{ "targets",	required_argument,	NULL,	't' },
 #ifdef SSL_TXT_TLSV1
 		{ "tls1",	no_argument,		&options.sslVersion, tls_v1 },
@@ -1272,12 +1268,17 @@ int main(int argc, char *argv[])
 
 	// Init...
 	memset(&options, 0, sizeof(struct sslCheckOptions));
+	/* Some of these are already technically case due to the memset, seatbelts.... */
 	options.port = 443;
 	strcpy(options.host, "127.0.0.1");
-	options.noFailed = false;
+	options.failed = false;
 	options.starttls = false;
 	options.sslVersion = ssl_all;
 	options.pout = false;
+	options.sslbugs = false;
+	options.http = false;
+	options.printcert = false;
+
 	SSL_library_init();
 
 	while((ch = getopt_long(argc, argv, "Vhp", opts, NULL)) != -1)
@@ -1341,7 +1342,7 @@ int main(int argc, char *argv[])
 		if (options.xmlOutput == NULL)
 		{
 			fprintf(stderr, "ERROR: Could not open XML output file %s.\n", xmlfile);
-			exit(0);
+			exit(1);
 		}
 
 		// Output file header...
@@ -1405,7 +1406,7 @@ int main(int argc, char *argv[])
 		status = testHost(&options);
 	else
 	{
-		if (fileExists(targetfile) == true)
+		if (fileExists(targetfile))
 		{
 			// Open targets file...
 			targetsFile = fopen(targetfile, "r");
