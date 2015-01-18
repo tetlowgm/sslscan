@@ -14,6 +14,7 @@ LDLIBS += -lssl -lcrypto
 all: $(PROG)
 
 $(PROG): $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $> $^ $(LDLIBS) -o $@
 
 install:
 	install -m 0755 $(PROG) $(BINPATH)/$(PROG)
