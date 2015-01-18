@@ -36,6 +36,9 @@
 #include <string.h>
 #include <netdb.h>
 #include <unistd.h>
+#ifdef __FreeBSD__
+#include <netinet/in.h>
+#endif
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <openssl/err.h>
