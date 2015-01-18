@@ -845,7 +845,7 @@ int getCertificate(struct sslCheckOptions *options)
 									X509_NAME_oneline(X509_get_issuer_name(x509Cert), buffer, sizeof(buffer) - 1);
 									printf("    Issuer: %s\n", buffer);
 									if (options->xmlOutput != 0)
-										fprintf(options->xmlOutput, "   <issuer>%s</issuer>\n", buffer);
+										fprintf(options->xmlOutput, "   <issuer><![CDATA[%s]]></issuer>\n", buffer);
 								}
 
 								// Validity...
@@ -876,7 +876,7 @@ int getCertificate(struct sslCheckOptions *options)
 									X509_NAME_oneline(X509_get_subject_name(x509Cert), buffer, sizeof(buffer) - 1);
 									printf("    Subject: %s\n", buffer);
 									if (options->xmlOutput != 0)
-										fprintf(options->xmlOutput, "   <subject>%s</subject>\n", buffer);
+										fprintf(options->xmlOutput, "   <subject><![CDATA[%s]]></subject>\n", buffer);
 								}
 
 								// Public Key Algo...
@@ -907,12 +907,12 @@ int getCertificate(struct sslCheckOptions *options)
 											case EVP_PKEY_RSA:
 												printf("    RSA Public Key: (%d bit)\n", BN_num_bits(publicKey->pkey.rsa->n));
 												if (options->xmlOutput != 0)
-													fprintf(options->xmlOutput, "   <pk error=\"false\" type=\"RSA\" bits=\"%d\">\n", BN_num_bits(publicKey->pkey.rsa->n));
+													fprintf(options->xmlOutput, "   <pk error=\"false\" type=\"RSA\" bits=\"%d\">\n<![CDATA[", BN_num_bits(publicKey->pkey.rsa->n));
 												RSA_print(stdoutBIO, publicKey->pkey.rsa, 6);
 												if (options->xmlOutput != 0)
 												{
 													RSA_print(fileBIO, publicKey->pkey.rsa, 4);
-													fprintf(options->xmlOutput, "   </pk>\n");
+													fprintf(options->xmlOutput, "]]>\n   </pk>\n");
 												}
 												break;
 											case EVP_PKEY_DSA:
@@ -971,7 +971,7 @@ int getCertificate(struct sslCheckOptions *options)
 											{
 												fprintf(options->xmlOutput, "    <extension name=\"");
 												i2a_ASN1_OBJECT(fileBIO, asn1Object);
-												BIO_printf(fileBIO, "\"%s>", tempInt2 ? " level=\"critical\"" : "");
+												BIO_printf(fileBIO, "\"%s><![CDATA[", tempInt2 ? " level=\"critical\"" : "");
 											}
 
 											// Print Extension value...
@@ -984,7 +984,7 @@ int getCertificate(struct sslCheckOptions *options)
 											{
 												if (!X509V3_EXT_print(fileBIO, extension, X509_FLAG_COMPAT, 0))
 													M_ASN1_OCTET_STRING_print(fileBIO, extension->value);
-												fprintf(options->xmlOutput, "</extension>\n");
+												fprintf(options->xmlOutput, "]]></extension>\n");
 											}
 											printf("\n");
 										}
@@ -1316,7 +1316,6 @@ int main(int argc, char *argv[])
 				targetfile = optarg;
 				break;
 			case 'x':
-				printf("Got XML file: %s\n", optarg);
 				xmlfile = optarg;
 				break;
 			default:
