@@ -85,21 +85,7 @@
 #define tls_v12 5
 #endif
 
-// Colour Console Output...
-#if !defined(__WIN32__)
-const char *RESET = "[0m";			// DEFAULT
-const char *COL_RED = "[31m";		// RED
-const char *COL_BLUE = "[34m";		// BLUE
-const char *COL_GREEN = "[32m";	// GREEN
-#else
-const char *RESET = "";
-const char *COL_RED = "";
-const char *COL_BLUE = "";
-const char *COL_GREEN = "";
-#endif
-
 #define VERSION "1.8.3"
-
 
 const char *program_banner = "                   _\n"
                              "           ___ ___| |___  ___ __ _ _ __\n"
@@ -211,7 +197,7 @@ int populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *ss
 		else
 		{
 			returnCode = false;
-			printf("%sERROR: Could not create SSL object.%s\n", COL_RED, RESET);
+			fprintf(stderr, "ERROR: Could not create SSL object.\n");
 		}
 
 		// Free CTX Object
@@ -222,7 +208,7 @@ int populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *ss
 	else
 	{
 		returnCode = false;
-		printf("%sERROR: Could not create CTX object.%s\n", COL_RED, RESET);
+		fprintf(stderr, "ERROR: Could not create SSL_CTX object.\n");
 	}
 
 	return returnCode;
@@ -274,7 +260,7 @@ int tcpConnect(struct sslCheckOptions *options)
 	socketDescriptor = socket(AF_INET, SOCK_STREAM, 0);
 	if(socketDescriptor < 0)
 	{
-		printf("%s    ERROR: Could not open a socket.%s\n", COL_RED, RESET);
+		fprintf(stderr, "ERROR: Could not open a socket.\n");
 		return 0;
 	}
 
@@ -285,7 +271,7 @@ int tcpConnect(struct sslCheckOptions *options)
 	status = bind(socketDescriptor, (struct sockaddr *) &localAddress, sizeof(localAddress));
 	if(status < 0)
 	{
-		printf("%s    ERROR: Could not bind to port.%s\n", COL_RED, RESET);
+		fprintf(stderr, "ERROR: Could not bind to port.\n");
 		return 0;
 	}
 
@@ -293,7 +279,7 @@ int tcpConnect(struct sslCheckOptions *options)
 	status = connect(socketDescriptor, (struct sockaddr *) &options->serverAddress, sizeof(options->serverAddress));
 	if(status < 0)
 	{
-		printf("%s    ERROR: Could not open a connection to host %s on port %d.%s\n", COL_RED, options->host, options->port, RESET);
+		fprintf(stderr, "ERROR: Could not open a connection to host %s on port %d.\n", options->host, options->port);
 		return 0;
 	}
 
@@ -305,7 +291,7 @@ int tcpConnect(struct sslCheckOptions *options)
 		if (strncmp(buffer, "220", 3) != 0)
 		{
 			close(socketDescriptor);
-			printf("%s    ERROR: The host %s on port %d did not appear to be an SMTP service.%s\n", COL_RED, options->host, options->port, RESET);
+			fprintf(stderr, "ERROR: The host %s on port %d did not appear to be an SMTP service.\n", options->host, options->port);
 			return 0;
 		}
 		send(socketDescriptor, "EHLO titania.co.uk\r\n", 20, 0);
@@ -314,7 +300,7 @@ int tcpConnect(struct sslCheckOptions *options)
 		if (strncmp(buffer, "250", 3) != 0)
 		{
 			close(socketDescriptor);
-			printf("%s    ERROR: The SMTP service on %s port %d did not respond with status 250 to our HELO.%s\n", COL_RED, options->host, options->port, RESET);
+			fprintf(stderr, "ERROR: The SMTP service on %s port %d did not respond with status 250 to our HELO.\n", options->host, options->port);
 			return 0;
 		}
 		send(socketDescriptor, "STARTTLS\r\n", 10, 0);
@@ -323,7 +309,7 @@ int tcpConnect(struct sslCheckOptions *options)
 		if (strncmp(buffer, "220", 3) != 0)
 		{
 			close(socketDescriptor);
-			printf("%s    ERROR: The SMTP service on %s port %d did not appear to support STARTTLS.%s\n", COL_RED, options->host, options->port, RESET);
+			fprintf(stderr, "ERROR: The SMTP service on %s port %d did not appear to support STARTTLS.\n", options->host, options->port);
 			return 0;
 		}
 	}
@@ -370,7 +356,7 @@ int loadCerts(struct sslCheckOptions *options)
 			{
 				if (!SSL_CTX_use_certificate_chain_file(options->ctx, options->clientCertsFile))
 				{
-					printf("%s    Could not configure certificate(s).%s\n", COL_RED, RESET);
+					fprintf(stderr, "Could not configure certificate(s).\n");
 					status = 0;
 				}
 			}
@@ -387,7 +373,7 @@ int loadCerts(struct sslCheckOptions *options)
 					{
 						if (!SSL_CTX_use_RSAPrivateKey_file(options->ctx, options->privateKeyFile, SSL_FILETYPE_ASN1))
 						{
-							printf("%s    Could not configure private key.%s\n", COL_RED, RESET);
+							fprintf(stderr, "Could not configure private key.\n");
 							status = 0;
 						}
 					}
@@ -406,26 +392,26 @@ int loadCerts(struct sslCheckOptions *options)
 			if (!pk12)
 			{
 				status = 0;
-				printf("%s    Could not read PKCS#12 file.%s\n", COL_RED, RESET);
+				fprintf(stderr, "Could not read PKCS#12 file.\n");
 			}
 			else
 			{
 				if (!PKCS12_parse(pk12, options->privateKeyPassword, &pkey, &cert, &ca))
 				{
 					status = 0;
-					printf("%s    Error parsing PKCS#12. Are you sure that password was correct?%s\n", COL_RED, RESET);
+					fprintf(stderr, "Error parsing PKCS#12. Are you sure that password was correct?\n");
 				}
 				else
 				{
 					if (!SSL_CTX_use_certificate(options->ctx, cert))
 					{
 						status = 0;
-						printf("%s    Could not configure certificate.%s\n", COL_RED, RESET);
+						fprintf(stderr, "Could not configure certificate.\n");
 					}
 					if (!SSL_CTX_use_PrivateKey(options->ctx, pkey))
 					{
 						status = 0;
-						printf("%s    Could not configure private key.%s\n", COL_RED, RESET);
+						fprintf(stderr, "Could not configure private key.\n");
 					}
 				}
 				PKCS12_free(pk12);
@@ -434,7 +420,7 @@ int loadCerts(struct sslCheckOptions *options)
 		}
 		else
 		{
-			printf("%s    Could not open PKCS#12 file.%s\n", COL_RED, RESET);
+			fprintf(stderr, "Could not open PKCS#12 file.\n");
 			status = 0;
 		}
 	}
@@ -444,7 +430,7 @@ int loadCerts(struct sslCheckOptions *options)
 	{
 		if (!SSL_CTX_check_private_key(options->ctx))
 		{
-			printf("%s    Prvate key does not match certificate.%s\n", COL_RED, RESET);
+			fprintf(stderr, "Private key does not match certificate.\n");
 			return false;
 		}
 		else
@@ -607,13 +593,13 @@ int testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoint
 			else
 			{
 				status = false;
-				printf("%s    ERROR: Could create SSL object.%s\n", COL_RED, RESET);
+				fprintf(stderr, "ERROR: Could create SSL object.\n");
 			}
 		}
 		else
 		{
 			status = false;
-			printf("%s    ERROR: Could set cipher %s.%s\n", COL_RED, sslCipherPointer->name, RESET);
+			fprintf(stderr, "ERROR: Could set cipher %s.\n", sslCipherPointer->name);
 		}
 
 		// Disconnect from host
@@ -689,14 +675,14 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 					else
 					{
 						status = false;
-						printf("%s    ERROR: Could create SSL object.%s\n", COL_RED, RESET);
+						fprintf(stderr, "ERROR: Could create SSL object.\n");
 					}
 				}
 			}
 			else
 			{
 				status = false;
-				printf("%s    ERROR: Could set cipher.%s\n", COL_RED, RESET);
+				fprintf(stderr, "ERROR: Could set cipher.\n");
 			}
 			
 			// Free CTX Object
@@ -707,7 +693,7 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 		else
 		{
 			status = false;
-			printf("%sERROR: Could not create CTX object.%s\n", COL_RED, RESET);
+			fprintf(stderr, "ERROR: Could not create CTX object.\n");
 		}
 
 		// Disconnect from host
@@ -790,7 +776,7 @@ int getCertificate(struct sslCheckOptions *options)
 							}
 
 							// Get Certificate...
-							printf("\n  %sSSL Certificate:%s\n", COL_BLUE, RESET);
+							printf("\n  SSL Certificate:\n");
 							if (options->xmlOutput != 0)
 								fprintf(options->xmlOutput, "  <certificate>\n");
 							x509Cert = SSL_get_peer_certificate(ssl);
@@ -1026,14 +1012,14 @@ int getCertificate(struct sslCheckOptions *options)
 					else
 					{
 						status = false;
-						printf("%s    ERROR: Could create SSL object.%s\n", COL_RED, RESET);
+						fprintf(stderr, "ERROR: Could create SSL object.\n");
 					}
 				}
 			}
 			else
 			{
 				status = false;
-				printf("%s    ERROR: Could set cipher.%s\n", COL_RED, RESET);
+				fprintf(stderr, "ERROR: Could set cipher.\n");
 			}
 
 			// Free CTX Object
@@ -1044,7 +1030,7 @@ int getCertificate(struct sslCheckOptions *options)
 		else
 		{
 			status = false;
-			printf("%sERROR: Could not create CTX object.%s\n", COL_RED, RESET);
+			fprintf(stderr, "ERROR: Could not create CTX object.\n");
 		}
 
 		// Disconnect from host
@@ -1070,7 +1056,7 @@ int testHost(struct sslCheckOptions *options)
 	options->hostStruct = gethostbyname(options->host);
 	if (options->hostStruct == NULL)
 	{
-		printf("%sERROR: Could not resolve hostname %s.%s\n", COL_RED, options->host, RESET);
+		fprintf(stderr, "ERROR: Could not resolve hostname %s.\n", options->host);
 		return false;
 	}
 
@@ -1084,8 +1070,8 @@ int testHost(struct sslCheckOptions *options)
 		fprintf(options->xmlOutput, " <ssltest host=\"%s\" port=\"%d\">\n", options->host, options->port);
 
 	// Test supported ciphers...
-	printf("\n%sTesting SSL server %s on port %d%s\n\n", COL_GREEN, options->host, options->port, RESET);
-	printf("  %sSupported Server Cipher(s):%s\n", COL_BLUE, RESET);
+	printf("\nTesting SSL server %s on port %d\n\n", options->host, options->port);
+	printf("  Supported Server Cipher(s):\n");
 	if ((options->http == true) && (options->pout == true))
 		printf("|| Status || HTTP Code || Version || Bits || Cipher ||\n");
 	else if (options->pout == true)
@@ -1121,7 +1107,7 @@ int testHost(struct sslCheckOptions *options)
 		else
 		{
 			status = false;
-			printf("%sERROR: Could not create CTX object.%s\n", COL_RED, RESET);
+			fprintf(stderr, "ERROR: Could not create CTX object.\n");
 		}
 
 		sslCipherPointer = sslCipherPointer->next;
@@ -1130,7 +1116,7 @@ int testHost(struct sslCheckOptions *options)
 	if (status == true)
 	{
 		// Test preferred ciphers...
-		printf("\n  %sPreferred Server Cipher(s):%s\n", COL_BLUE, RESET);
+		printf("\n  Preferred Server Cipher(s):\n");
 		if (options->pout == true)
 			printf("|| Version || Bits || Cipher ||\n");
 		switch (options->sslVersion)
@@ -1354,7 +1340,7 @@ int main(int argc, char *argv[])
 		options.xmlOutput = fopen(xmlfile, "w");
 		if (options.xmlOutput == NULL)
 		{
-			printf("%sERROR: Could not open XML output file %s.%s\n", COL_RED, xmlfile, RESET);
+			fprintf(stderr, "ERROR: Could not open XML output file %s.\n", xmlfile);
 			exit(0);
 		}
 
@@ -1362,7 +1348,7 @@ int main(int argc, char *argv[])
 		fprintf(options.xmlOutput, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<document title=\"SSLScan Results\" version=\"%s\" web=\"http://www.titania.co.uk\">\n", xml_version);
 	}
 
-	printf("%s%s%s", COL_BLUE, program_banner, RESET);
+	printf("%s", program_banner);
 
 	SSLeay_add_all_algorithms();
 	ERR_load_crypto_strings();
@@ -1424,7 +1410,7 @@ int main(int argc, char *argv[])
 			// Open targets file...
 			targetsFile = fopen(targetfile, "r");
 			if (targetsFile == NULL)
-				printf("%sERROR: Could not open targets file %s.%s\n", COL_RED, targetfile, RESET);
+				fprintf(stderr, "ERROR: Could not open targets file %s.\n", targetfile);
 			else
 			{
 				readLine(targetsFile, line, sizeof(line));
@@ -1452,7 +1438,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		else
-			printf("%sERROR: Targets file %s does not exist.%s\n", COL_RED, targetfile, RESET);
+			fprintf(stderr, "ERROR: Targets file %s does not exist.\n", targetfile);
 	}
 
 	// Free Structures
