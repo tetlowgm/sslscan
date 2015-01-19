@@ -5,8 +5,7 @@ MAN = $(PROG).1
 PREFIX ?= /usr/local
 BINPATH ?= $(PREFIX)/bin
 MANPATH ?= $(PREFIX)/man/man1
-CFLAGS += -Wall -I/opt/local/include
-LDFLAGS += -L/opt/local/lib
+CFLAGS += -Wall
 LDLIBS += -lssl -lcrypto
 
 .PHONY: all install uninstall clean
@@ -17,12 +16,8 @@ $(PROG): $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) $> $^ $(LDLIBS) -o $@
 
 install:
-	install -m 0755 $(PROG) $(BINPATH)/$(PROG)
-	install -m 0644 $(MAN) $(MANPATH)/$(MAN)
-
-uninstall:
-	rm -f $(BINPATH)/$(PROG)
-	rm -f $(MANPATH)/$(MAN)
+	install -s -m 0755 $(PROG) $(DESTDIR)$(BINPATH)/$(PROG)
+	install -m 0644 $(MAN) $(DESTDIR)$(MANPATH)/$(MAN)
 
 clean:
 	rm -f $(PROG) $(OBJS)
