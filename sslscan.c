@@ -122,7 +122,7 @@ struct sslCheckOptions
 
 
 // Adds Ciphers to the Cipher List structure
-void
+static void
 populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
@@ -182,7 +182,8 @@ populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMet
 }
 
 // Create a TCP socket
-int tcpConnect(struct sslCheckOptions *options)
+static int
+tcpConnect(struct sslCheckOptions *options)
 {
 	// Variables...
 	int socketDescriptor;
@@ -249,7 +250,8 @@ int tcpConnect(struct sslCheckOptions *options)
 
 
 // Private Key Password Callback...
-static int password_callback(char *buf, int size, int rwflag, void *userdata)
+static int
+password_callback(char *buf, int size, int rwflag, void *userdata)
 {
 	strncpy(buf, (char *)userdata, size);
 	buf[strlen(userdata)] = 0;
@@ -258,7 +260,7 @@ static int password_callback(char *buf, int size, int rwflag, void *userdata)
 
 
 // Load client certificates/private keys...
-void
+static void
 loadCerts(struct sslCheckOptions *options)
 {
 	// Variables...
@@ -321,7 +323,8 @@ loadCerts(struct sslCheckOptions *options)
 
 
 // Test a cipher...
-bool testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
+static bool
+testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
 {
 	// Variables...
 	int cipherStatus;
@@ -478,8 +481,9 @@ bool testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPoin
 }
 
 
-// Test for prefered ciphers
-int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
+// Test for preferred ciphers
+static int
+defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
 	int cipherStatus;
@@ -546,7 +550,8 @@ int defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMeth
 
 
 // Get certificate...
-bool getCertificate(struct sslCheckOptions *options)
+static bool
+getCertificate(struct sslCheckOptions *options)
 {
 	// Variables...
 	int cipherStatus = 0;
@@ -863,7 +868,8 @@ failed:
 
 
 // Test a single host and port for ciphers...
-bool testHost(struct sslCheckOptions *options)
+static bool
+testHost(struct sslCheckOptions *options)
 {
 	// Variables...
 	struct sslCipher *sslCipherPointer;
@@ -1010,7 +1016,8 @@ usage(void)
 	exit(EX_USAGE);
 }
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
 	// Variables...
 	struct sslCheckOptions options;
