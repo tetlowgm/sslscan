@@ -995,6 +995,8 @@ bool testHost(struct sslCheckOptions *options)
 	if (options->xmlOutput != 0)
 		fprintf(options->xmlOutput, " </ssltest>\n");
 
+	printf("\n");
+
 	// Return status...
 	return status;
 }
