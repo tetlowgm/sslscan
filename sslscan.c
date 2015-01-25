@@ -68,26 +68,6 @@
 #define SSL_CONST
 #endif
 
-#define ssl_all 0
-/* SSLv2 support is removed in 1.1.0 */
-#ifdef SSL_TXT_SSLV2
-#define ssl_v2 1
-#endif
-#ifdef SSL_TXT_SSLV3
-#define ssl_v3 2
-#endif
-#ifdef SSL_TXT_TLSV1
-#define tls_v1 3
-#endif
-/* TLSv1.1 appeared in 1.0.1 */
-#ifdef SSL_TXT_TLSV1_1
-#define tls_v11 4
-#endif
-/* TLSv1.2 appeared in 1.0.1 */
-#ifdef SSL_TXT_TLSV1_2
-#define tls_v12 5
-#endif
-
 #define VERSION "1.8.3"
 
 const char *program_version = "sslscan version " VERSION "\nhttp://www.titania.co.uk\nCopyright (C) Ian Ventura-Whiting 2009\n";
@@ -112,7 +92,14 @@ struct sslCheckOptions
 	int port;
 	bool failed;
 	bool starttls;
-	int sslVersion;
+#define SSLSCAN_ALL 0xFF
+#define SSLSCAN_NONE 0x0
+#define SSLSCAN_SSLV2 0x01
+#define SSLSCAN_SSLV3 0x02
+#define SSLSCAN_TLSV1 0x04
+#define SSLSCAN_TLSV1_1 0x08
+#define SSLSCAN_TLSV1_2 0x10
+	unsigned int sslVersion;
 	bool pout;
 	bool sslbugs;
 	bool http;
@@ -939,51 +926,27 @@ bool testHost(struct sslCheckOptions *options)
 		printf("\n  Preferred Server Cipher(s):\n");
 		if (options->pout)
 			printf("|| Version || Bits || Cipher ||\n");
-		switch (options->sslVersion)
-		{
-			case ssl_all:
+
 #ifdef SSL_TXT_SSLV2
-				status = status ? defaultCipher(options, SSLv2_client_method()) : false;
+		if(options->sslVersion & SSLSCAN_SSLV2)
+			status = status ? defaultCipher(options, SSLv2_client_method()) : false;
 #endif
 #ifdef SSL_TXT_SSLV3
-				status = status ? defaultCipher(options, SSLv3_client_method()) : false;
+		if(options->sslVersion & SSLSCAN_SSLV3)
+			status = status ? defaultCipher(options, SSLv3_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1
-				status = status ? defaultCipher(options, TLSv1_client_method()) : false;
+		if(options->sslVersion & SSLSCAN_TLSV1)
+			status = status ? defaultCipher(options, TLSv1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_1
-				status = status ? defaultCipher(options, TLSv1_1_client_method()) : false;
+		if(options->sslVersion & SSLSCAN_TLSV1_1)
+			status = status ? defaultCipher(options, TLSv1_1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_2
-				status = status ? defaultCipher(options, TLSv1_2_client_method()) : false;
+		if(options->sslVersion & SSLSCAN_TLSV1_2)
+			status = status ? defaultCipher(options, TLSv1_2_client_method()) : false;
 #endif
-				break;
-#ifdef SSL_TXT_SSLV2
-			case ssl_v2:
-				status = defaultCipher(options, SSLv2_client_method());
-				break;
-#endif
-#ifdef SSL_TXT_SSLV3
-			case ssl_v3:
-				status = defaultCipher(options, SSLv3_client_method());
-				break;
-#endif
-#ifdef SSL_TXT_TLSV1
-			case tls_v1:
-				status = defaultCipher(options, TLSv1_client_method());
-				break;
-#endif
-#ifdef SSL_TXT_TLSV1_1
-			case tls_v11:
-				status = defaultCipher(options, TLSv1_1_client_method());
-				break;
-#endif
-#ifdef SSL_TXT_TLSV1_2
-			case tls_v12:
-				status = defaultCipher(options, TLSv1_2_client_method());
-				break;
-#endif
-		}
 	}
 
 	if (status && options->printcert)
@@ -1004,27 +967,16 @@ bool testHost(struct sslCheckOptions *options)
 static void
 usage(void)
 {
-	fprintf(stderr, "Usage: sslscan [options] [host:port | host]\n\n");
+	fprintf(stderr, "Usage: sslscan [options] <host[:port]>\n\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "  --targets=<file>     A file containing a list of hosts to check. Hosts can\n");
 	fprintf(stderr, "                       be supplied with ports (i.e. host:port).\n");
 	fprintf(stderr, "  --show-failed        List only all ciphers (default lists accepted ciphers).\n");
 	fprintf(stderr, "  --show-cert          Print SSL certificate information.\n");
-#ifdef SSL_TXT_SSLV2
-	fprintf(stderr, "  --ssl2               Only check SSLv2 ciphers.\n");
-#endif
-#ifdef SSL_TXT_SSLV3
-	fprintf(stderr, "  --ssl3               Only check SSLv3 ciphers.\n");
-#endif
-#ifdef SSL_TXT_TLSV1
-	fprintf(stderr, "  --tls1               Only check TLSv1.0 ciphers.\n");
-#endif
-#ifdef SSL_TXT_TLSV1_1
-	fprintf(stderr, "  --tls1.1             Only check TLSv1.1 ciphers.\n");
-#endif
-#ifdef SSL_TXT_TLSV1_2
-	fprintf(stderr, "  --tls1.2             Only check TLSv1.2 ciphers.\n");
-#endif
+	fprintf(stderr, "  --ssl2, --ssl3, --tls1, --tls1.1, --tls1.2\n");
+	fprintf(stderr, "                       Check specified protocol version.\n");
+	fprintf(stderr, "  --no-ssl2, --no-ssl3, --no-tls1, --no-tls1.1, --no-tls1.2\n");
+	fprintf(stderr, "                       Don't check specified protocol version.\n");
 	fprintf(stderr, "  --pk=<file>          A file containing the private key or a PKCS#12 file\n");
 	fprintf(stderr, "                       containing a private key/certificate pair.\n");
 	fprintf(stderr, "  --pkpass=<password>  The password for the private key or PKCS#12 file.\n");
@@ -1035,9 +987,26 @@ usage(void)
 	fprintf(stderr, "  --bugs               Enable SSL implementation bug work-arounds.\n");
 	fprintf(stderr, "  --xml=<file>         Output results to an XML file.\n");
 	fprintf(stderr, "  --version            Display the program version.\n");
-	fprintf(stderr, "  --help               Display the help text you are now reading.\n");
-	fprintf(stderr, "\nExample:\n");
-	fprintf(stderr, "  sslscan 127.0.0.1\n");
+	fprintf(stderr, "  --help               Display the help text you are now reading.\n\n");
+	fprintf(stderr, "Unless specified, all SSL protocol versions are checked.\n");
+	fprintf(stderr, "SSL protocol version support dependent on OpenSSL library support.\n");
+	fprintf(stderr, "  Supported protocol versions:");
+#ifdef SSL_TXT_SSLV2
+	fprintf(stderr, " SSLv2");
+#endif
+#ifdef SSL_TXT_SSLV3
+	fprintf(stderr, " SSLv3");
+#endif
+#ifdef SSL_TXT_TLSV1
+	fprintf(stderr, " TLSv1.0");
+#endif
+#ifdef SSL_TXT_TLSV1_1
+	fprintf(stderr, " TLSv1.1");
+#endif
+#ifdef SSL_TXT_TLSV1_2
+	fprintf(stderr, " TLSv1.2");
+#endif
+	fprintf(stderr, "\n");
 	exit(EX_USAGE);
 }
 
@@ -1048,7 +1017,7 @@ int main(int argc, char *argv[])
 	struct sslCipher *sslCipherPointer;
 	bool status = true;
 	int mode = mode_single;
-	int ch;
+	int ch, sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
 	FILE *targetsFile;
 	char *xmlfile = NULL;
 	char *targetfile = NULL;
@@ -1061,30 +1030,27 @@ int main(int argc, char *argv[])
 		{ "certs",	required_argument,	NULL,	'c' },
 		{ "help",	no_argument,		NULL,	'h' },
 		{ "http",	no_argument,		(int *)&options.http, true },
+		{ "no-cert",	no_argument,		(int *)&options.printcert, false },
 		{ "no-failed",	no_argument,		(int *)&options.failed, false },
-		{ "show-failed", no_argument,		(int *)&options.failed, true },
-		{ "show-cert", no_argument,		(int *)&options.printcert, true },
+		{ "no-ssl2",	no_argument,		&nosslflag, SSLSCAN_SSLV2 },
+		{ "no-ssl3",	no_argument,		&nosslflag, SSLSCAN_SSLV3 },
+		{ "no-tls1",	no_argument,		&nosslflag, SSLSCAN_TLSV1 },
+		{ "no-tls1.0",	no_argument,		&nosslflag, SSLSCAN_TLSV1 },
+		{ "no-tls1.1",	no_argument,		&nosslflag, SSLSCAN_TLSV1_1 },
+		{ "no-tls1.2",	no_argument,		&nosslflag, SSLSCAN_TLSV1_2 },
 		{ "pipe",	no_argument,		NULL,	'p' },
 		{ "pk",		required_argument,	NULL,	'k' },
 		{ "pk-pass",	required_argument,	NULL,	'l' },
-#ifdef SSL_TXT_SSLV2
-		{ "ssl2",	no_argument,		&options.sslVersion, ssl_v2 },
-#endif
-#ifdef SSL_TXT_SSLV3
-		{ "ssl3",	no_argument,		&options.sslVersion, ssl_v3 },
-#endif
+		{ "show-failed", no_argument,		(int *)&options.failed, true },
+		{ "show-cert",	no_argument,		(int *)&options.printcert, true },
+		{ "ssl2",	no_argument,		&sslflag, SSLSCAN_SSLV2 },
+		{ "ssl3",	no_argument,		&sslflag, SSLSCAN_SSLV3 },
 		{ "starttls",	no_argument,		(int *)&options.starttls, true },
 		{ "targets",	required_argument,	NULL,	't' },
-#ifdef SSL_TXT_TLSV1
-		{ "tls1",	no_argument,		&options.sslVersion, tls_v1 },
-		{ "tls1.0",	no_argument,		&options.sslVersion, tls_v1 },
-#endif
-#ifdef SSL_TXT_TLSV1_1
-		{ "tls1.1",	no_argument,		&options.sslVersion, tls_v11 },
-#endif
-#ifdef SSL_TXT_TLSV1_2
-		{ "tls1.2",	no_argument,		&options.sslVersion, tls_v12 },
-#endif
+		{ "tls1",	no_argument,		&sslflag, SSLSCAN_TLSV1 },
+		{ "tls1.0",	no_argument,		&sslflag, SSLSCAN_TLSV1 },
+		{ "tls1.1",	no_argument,		&sslflag, SSLSCAN_TLSV1_1 },
+		{ "tls1.2",	no_argument,		&sslflag, SSLSCAN_TLSV1_2 },
 		{ "version",	no_argument,		NULL,	'V' },
 		{ "xml",	required_argument,	NULL,	'x' },
 		{ NULL,		0,			NULL,	0 }
@@ -1097,7 +1063,7 @@ int main(int argc, char *argv[])
 	options.host = "127.0.0.1";
 	options.failed = false;
 	options.starttls = false;
-	options.sslVersion = ssl_all;
+	options.sslVersion = SSLSCAN_ALL;
 	options.pout = false;
 	options.sslbugs = false;
 	options.http = false;
@@ -1107,14 +1073,23 @@ int main(int argc, char *argv[])
 
 	while((ch = getopt_long(argc, argv, "Vhp", opts, NULL)) != -1)
 		switch(ch) {
+			case 0:
+				if (sslflag != SSLSCAN_NONE) {
+					if (options.sslVersion == SSLSCAN_ALL)
+						options.sslVersion = SSLSCAN_NONE;
+					options.sslVersion |= sslflag;
+					sslflag = SSLSCAN_NONE;
+				}
+				else if (nosslflag != SSLSCAN_NONE){
+					options.sslVersion &= ~nosslflag;
+					nosslflag = SSLSCAN_NONE;
+				}
+				break;
 			case 'V':
 				fprintf(stderr, "%s", program_version);
 				return EX_USAGE;
 			case 'c':
 				options.clientCertsFile = optarg;
-				break;
-			case 'h':
-				usage();
 				break;
 			case 'k':
 				options.privateKeyFile = optarg;
@@ -1132,11 +1107,35 @@ int main(int argc, char *argv[])
 			case 'x':
 				xmlfile = optarg;
 				break;
+			case '?':
+			case 'h':
 			default:
+				usage();
 				break;
 		}
 	argc -= optind;
 	argv += optind;
+
+#ifdef SSL_TXT_SSLV2
+	if(options.sslVersion & SSLSCAN_SSLV2)
+		populateCipherList(&options, SSLv2_client_method());
+#endif
+#ifdef SSL_TXT_SSLV3
+	if(options.sslVersion & SSLSCAN_SSLV3)
+		populateCipherList(&options, SSLv3_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1
+	if(options.sslVersion & SSLSCAN_TLSV1)
+		populateCipherList(&options, TLSv1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_1
+	if(options.sslVersion & SSLSCAN_TLSV1_1)
+		populateCipherList(&options, TLSv1_1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_2
+	if(options.sslVersion & SSLSCAN_TLSV1_2)
+		populateCipherList(&options, TLSv1_2_client_method());
+#endif
 
 	// Host (maybe port too)...
 	if ((mode == mode_single) && (argc == 1))
@@ -1164,53 +1163,6 @@ int main(int argc, char *argv[])
 
 	SSLeay_add_all_algorithms();
 	ERR_load_crypto_strings();
-
-	// Build a list of ciphers...
-	switch (options.sslVersion)
-	{
-		case ssl_all:
-#ifdef SSL_TXT_SSLV2
-			populateCipherList(&options, SSLv2_client_method());
-#endif
-#ifdef SSL_TXT_SSLV3
-			populateCipherList(&options, SSLv3_client_method());
-#endif
-#ifdef SSL_TXT_TLSV1
-			populateCipherList(&options, TLSv1_client_method());
-#endif
-#ifdef SSL_TXT_TLSV1_1
-			populateCipherList(&options, TLSv1_1_client_method());
-#endif
-#ifdef SSL_TXT_TLSV1_2
-			populateCipherList(&options, TLSv1_2_client_method());
-#endif
-			break;
-#ifdef SSL_TXT_SSLV2
-		case ssl_v2:
-			populateCipherList(&options, SSLv2_client_method());
-			break;
-#endif
-#ifdef SSL_TXT_SSLV3
-		case ssl_v3:
-			populateCipherList(&options, SSLv3_client_method());
-			break;
-#endif
-#ifdef SSL_TXT_TLSV1
-		case tls_v1:
-			populateCipherList(&options, TLSv1_client_method());
-			break;
-#endif
-#ifdef SSL_TXT_TLSV1_1
-		case tls_v11:
-			populateCipherList(&options, TLSv1_1_client_method());
-			break;
-#endif
-#ifdef SSL_TXT_TLSV1_2
-		case tls_v12:
-			populateCipherList(&options, TLSv1_2_client_method());
-			break;
-#endif
-	}
 
 	// Do the testing...
 	if (mode == mode_single)
