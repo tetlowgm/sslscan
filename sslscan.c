@@ -35,6 +35,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifdef __FreeBSD__
+#define _WITH_GETLINE
 #include <sys/socket.h>
 #include <netinet/in.h>
 #endif
@@ -47,6 +48,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/x509v3.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
