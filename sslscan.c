@@ -1018,7 +1018,7 @@ main(int argc, char *argv[])
 	struct sslCheckOptions options;
 	struct sslCipher *sslCipherPointer;
 	bool status = true;
-	int ch, sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
+	int i, ch, sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
 	FILE *targetsFile;
 	char *xmlfile = NULL;
 	char *targetfile = NULL;
@@ -1170,7 +1170,7 @@ main(int argc, char *argv[])
 	ERR_load_crypto_strings();
 
 	// Do the testing...
-	for(int i = 0; i < argc; i++)
+	for(i = 0; i < argc; i++)
 	{
 		// Host (maybe port too)...
 		options.host = strsep(&argv[i], ":");
