@@ -53,9 +53,6 @@
 #include <sysexits.h>
 #include <unistd.h>
 
-#define mode_single 0
-#define mode_multiple 1
-
 #define BUFFERSIZE 1024
 
 /*
@@ -115,7 +112,6 @@ struct sslCheckOptions
 	FILE *xmlOutput;
 
 	// TCP Connection Variables...
-	struct hostent *hostStruct;
 	struct sockaddr_in serverAddress;
 
 	// SSL Variables...
@@ -194,21 +190,12 @@ tcpConnect(struct sslCheckOptions *options)
 	// Variables...
 	int socketDescriptor;
 	char buffer[BUFFERSIZE];
-	struct sockaddr_in localAddress;
 	int status;
 
 	// Create Socket
 	socketDescriptor = socket(AF_INET, SOCK_STREAM, 0);
 	if(socketDescriptor < 0)
 		errx(EX_OSERR, "Could not open socket.");
-
-	// Configure Local Port
-	localAddress.sin_family = AF_INET;
-	localAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-	localAddress.sin_port = htons(0);
-	status = bind(socketDescriptor, (struct sockaddr *) &localAddress, sizeof(localAddress));
-	if(status < 0)
-		errx(EX_OSERR, "Could not bind to port.");
 
 	// Connect
 	status = connect(socketDescriptor, (struct sockaddr *) &options->serverAddress, sizeof(options->serverAddress));
@@ -879,19 +866,20 @@ testHost(struct sslCheckOptions *options)
 {
 	// Variables...
 	struct sslCipher *sslCipherPointer;
+	struct hostent *hostStruct;
 	bool status = true;
 
 	// Resolve Host Name
-	options->hostStruct = gethostbyname(options->host);
-	if (options->hostStruct == NULL)
+	hostStruct = gethostbyname(options->host);
+	if (hostStruct == NULL)
 	{
 		warnx("Could not resolve hostname %s: %s", options->host, hstrerror(h_errno));
 		return false;
 	}
 
 	// Configure Server Address and Port
-	options->serverAddress.sin_family = options->hostStruct->h_addrtype;
-	memcpy((char *) &options->serverAddress.sin_addr.s_addr, options->hostStruct->h_addr_list[0], options->hostStruct->h_length);
+	options->serverAddress.sin_family = hostStruct->h_addrtype;
+	memcpy((char *) &options->serverAddress.sin_addr.s_addr, hostStruct->h_addr_list[0], hostStruct->h_length);
 	options->serverAddress.sin_port = htons(options->port);
 
 	// XML Output...
@@ -979,10 +967,11 @@ testHost(struct sslCheckOptions *options)
 static void
 usage(void)
 {
-	fprintf(stderr, "Usage: sslscan [options] <host[:port]>\n\n");
+	fprintf(stderr, "Usage: sslscan [options] [-t <file> | host[:port] [host[:port] ...]]\n\n");
 	fprintf(stderr, "Options:\n");
-	fprintf(stderr, "  --targets=<file>     A file containing a list of hosts to check. Hosts can\n");
+	fprintf(stderr, "  -t <file>            A file containing a list of hosts to check. Hosts can\n");
 	fprintf(stderr, "                       be supplied with ports (i.e. host:port).\n");
+	fprintf(stderr, "  --targets=<file>     Equivalent to -t.\n");
 	fprintf(stderr, "  --show-failed        List only all ciphers (default lists accepted ciphers).\n");
 	fprintf(stderr, "  --show-cert          Print SSL certificate information.\n");
 	fprintf(stderr, "  --ssl2, --ssl3, --tls1, --tls1.1, --tls1.2\n");
@@ -1029,7 +1018,6 @@ main(int argc, char *argv[])
 	struct sslCheckOptions options;
 	struct sslCipher *sslCipherPointer;
 	bool status = true;
-	int mode = mode_single;
 	int ch, sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
 	FILE *targetsFile;
 	char *xmlfile = NULL;
@@ -1082,7 +1070,7 @@ main(int argc, char *argv[])
 	options.http = false;
 	options.printcert = false;
 
-	while((ch = getopt_long(argc, argv, "Vhp", opts, NULL)) != -1)
+	while((ch = getopt_long(argc, argv, "Vhpt:", opts, NULL)) != -1)
 		switch(ch) {
 			case 0:
 				if (sslflag != SSLSCAN_NONE) {
@@ -1112,7 +1100,6 @@ main(int argc, char *argv[])
 				options.pout = true;
 				break;
 			case 't':
-				mode = mode_multiple;
 				targetfile = optarg;
 				break;
 			case 'x':
@@ -1165,17 +1152,7 @@ main(int argc, char *argv[])
 		warnx("TLSv1.2 requested but unsupported by library");
 #endif
 
-	// Host (maybe port too)...
-	if ((mode == mode_single) && (argc == 1))
-	{
-		// Get host...
-		options.host = strsep(argv, ":");
-		if (argv[0] && argv[0][0])
-			options.port = atoi(argv[0]);
-	} else if (mode == mode_multiple) { /* FALLTHROUGH */ }
-
-	// Not too sure what the user is doing...
-	else
+	if ((argc == 0) && (targetfile == NULL))
 		usage();
 
 	// Open XML file output...
@@ -1193,9 +1170,16 @@ main(int argc, char *argv[])
 	ERR_load_crypto_strings();
 
 	// Do the testing...
-	if (mode == mode_single)
+	for(int i = 0; i < argc; i++)
+	{
+		// Host (maybe port too)...
+		options.host = strsep(&argv[i], ":");
+		if (argv[i] && argv[i][0])
+			options.port = atoi(argv[i]);
 		status = testHost(&options);
-	else
+	}
+
+	if (targetfile)
 	{
 		// Open targets file...
 		targetsFile = fopen(targetfile, "r");
