@@ -1082,8 +1082,6 @@ main(int argc, char *argv[])
 	options.http = false;
 	options.printcert = false;
 
-	SSL_library_init();
-
 	while((ch = getopt_long(argc, argv, "Vhp", opts, NULL)) != -1)
 		switch(ch) {
 			case 0:
@@ -1129,6 +1127,8 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
+	SSL_library_init();
+	
 #ifdef SSL_TXT_SSLV2
 	if (options.sslVersion & SSLSCAN_SSLV2)
 		populateCipherList(&options, SSLv2_client_method());
