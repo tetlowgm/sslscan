@@ -59,7 +59,7 @@
 #define BUFFERSIZE 1024
 
 /*
- * OpenSSL 1.0.0 introduce const qualifiers for SSL_METHOD. Try
+ * OpenSSL 1.0.0 introduced const qualifiers for SSL_METHOD. Try
  * to surpress warnings for it for both versions.
  */
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
@@ -94,6 +94,12 @@ struct sslCheckOptions
 	bool starttls;
 #define SSLSCAN_ALL 0xFF
 #define SSLSCAN_NONE 0x0
+/*
+ * The high order bit tells us if the user requested a specific
+ * SSL protocol version, or just the default/masked-out protocols.
+ * We use this for warnings later on.
+ */
+#define SSLSCAN_USER_UNSET 0x80
 #define SSLSCAN_SSLV2 0x01
 #define SSLSCAN_SSLV3 0x02
 #define SSLSCAN_TLSV1 0x04
@@ -1124,24 +1130,39 @@ main(int argc, char *argv[])
 	argv += optind;
 
 #ifdef SSL_TXT_SSLV2
-	if(options.sslVersion & SSLSCAN_SSLV2)
+	if (options.sslVersion & SSLSCAN_SSLV2)
 		populateCipherList(&options, SSLv2_client_method());
+#else
+	if ((options.sslVersion & SSLSCAN_SSLV2) && !(options.sslVersion & SSLSCAN_USER_UNSET))
+		warnx("SSLv2 requested but unsupported by library");
 #endif
 #ifdef SSL_TXT_SSLV3
-	if(options.sslVersion & SSLSCAN_SSLV3)
+	if (options.sslVersion & SSLSCAN_SSLV3)
 		populateCipherList(&options, SSLv3_client_method());
+#else
+	if ((options.sslVersion & SSLSCAN_SSLV3) && !(options.sslVersion & SSLSCAN_USER_UNSET))
+		warnx("SSLv3 requested but unsupported by library");
 #endif
 #ifdef SSL_TXT_TLSV1
-	if(options.sslVersion & SSLSCAN_TLSV1)
+	if (options.sslVersion & SSLSCAN_TLSV1)
 		populateCipherList(&options, TLSv1_client_method());
+#else
+	if ((options.sslVersion & SSLSCAN_TLSV1) && !(options.sslVersion & SSLSCAN_USER_UNSET))
+		warnx("TLSv1 requested but unsupported by library");
 #endif
 #ifdef SSL_TXT_TLSV1_1
-	if(options.sslVersion & SSLSCAN_TLSV1_1)
+	if (options.sslVersion & SSLSCAN_TLSV1_1)
 		populateCipherList(&options, TLSv1_1_client_method());
+#else
+	if ((options.sslVersion & SSLSCAN_TLSV1_1) && !(options.sslVersion & SSLSCAN_USER_UNSET))
+		warnx("TLSv1.1 requested but unsupported by library");
 #endif
 #ifdef SSL_TXT_TLSV1_2
-	if(options.sslVersion & SSLSCAN_TLSV1_2)
+	if (options.sslVersion & SSLSCAN_TLSV1_2)
 		populateCipherList(&options, TLSv1_2_client_method());
+#else
+	if ((options.sslVersion & SSLSCAN_TLSV1_2) && !(options.sslVersion & SSLSCAN_USER_UNSET))
+		warnx("TLSv1.2 requested but unsupported by library");
 #endif
 
 	// Host (maybe port too)...
