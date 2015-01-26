@@ -885,9 +885,36 @@ testHost(struct sslCheckOptions *options)
 	// XML Output...
 	if (options->xmlOutput != 0)
 		fprintf(options->xmlOutput, " <ssltest host=\"%s\" port=\"%d\">\n", options->host, options->port);
+	printf("Testing SSL server %s on port %d\n\n", options->host, options->port);
+
+	// Test preferred ciphers...
+	printf("  Preferred Server Cipher(s):\n");
+	if (options->pout)
+		printf("|| Version || Bits || Cipher ||\n");
+
+#ifdef SSL_TXT_SSLV2
+	if(options->sslVersion & SSLSCAN_SSLV2)
+		status = status ? defaultCipher(options, SSLv2_client_method()) : false;
+#endif
+#ifdef SSL_TXT_SSLV3
+	if(options->sslVersion & SSLSCAN_SSLV3)
+		status = status ? defaultCipher(options, SSLv3_client_method()) : false;
+#endif
+#ifdef SSL_TXT_TLSV1
+	if(options->sslVersion & SSLSCAN_TLSV1)
+		status = status ? defaultCipher(options, TLSv1_client_method()) : false;
+#endif
+#ifdef SSL_TXT_TLSV1_1
+	if(options->sslVersion & SSLSCAN_TLSV1_1)
+		status = status ? defaultCipher(options, TLSv1_1_client_method()) : false;
+#endif
+#ifdef SSL_TXT_TLSV1_2
+	if(options->sslVersion & SSLSCAN_TLSV1_2)
+		status = status ? defaultCipher(options, TLSv1_2_client_method()) : false;
+#endif
+	printf("\n");
 
 	// Test supported ciphers...
-	printf("Testing SSL server %s on port %d\n\n", options->host, options->port);
 	printf("  Supported Server Cipher(s):\n");
 	if ((options->http) && (options->pout))
 		printf("|| Status || HTTP Code || Version || Bits || Cipher ||\n");
@@ -918,35 +945,6 @@ testHost(struct sslCheckOptions *options)
 		SSL_CTX_free(options->ctx);
 	
 		sslCipherPointer = sslCipherPointer->next;
-	}
-
-	if (status)
-	{
-		// Test preferred ciphers...
-		printf("\n  Preferred Server Cipher(s):\n");
-		if (options->pout)
-			printf("|| Version || Bits || Cipher ||\n");
-
-#ifdef SSL_TXT_SSLV2
-		if(options->sslVersion & SSLSCAN_SSLV2)
-			status = status ? defaultCipher(options, SSLv2_client_method()) : false;
-#endif
-#ifdef SSL_TXT_SSLV3
-		if(options->sslVersion & SSLSCAN_SSLV3)
-			status = status ? defaultCipher(options, SSLv3_client_method()) : false;
-#endif
-#ifdef SSL_TXT_TLSV1
-		if(options->sslVersion & SSLSCAN_TLSV1)
-			status = status ? defaultCipher(options, TLSv1_client_method()) : false;
-#endif
-#ifdef SSL_TXT_TLSV1_1
-		if(options->sslVersion & SSLSCAN_TLSV1_1)
-			status = status ? defaultCipher(options, TLSv1_1_client_method()) : false;
-#endif
-#ifdef SSL_TXT_TLSV1_2
-		if(options->sslVersion & SSLSCAN_TLSV1_2)
-			status = status ? defaultCipher(options, TLSv1_2_client_method()) : false;
-#endif
 	}
 
 	if (status && options->printcert)
