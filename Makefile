@@ -5,7 +5,7 @@ MAN = $(PROG).1
 PREFIX ?= /usr/local
 BINPATH ?= $(PREFIX)/bin
 MANPATH ?= $(PREFIX)/man/man1
-CFLAGS += -Wall
+CFLAGS += -Wall -Wno-deprecated-declarations
 LDLIBS += -lssl -lcrypto
 
 .PHONY: all install uninstall clean

@@ -33,10 +33,10 @@
 
 // Includes...
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #ifdef __FreeBSD__
 #define _WITH_GETLINE
-#include <sys/socket.h>
 #include <netinet/in.h>
 #endif
 
@@ -85,8 +85,6 @@ struct sslCipher
 struct sslCheckOptions
 {
 	// Program Options...
-	char *host;
-	int port;
 	bool failed;
 	bool starttls;
 #define SSLSCAN_ALL 0xFF
@@ -185,7 +183,7 @@ populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMet
 
 // Create a TCP socket
 static int
-tcpConnect(struct sslCheckOptions *options)
+tcpConnect(struct addrinfo h, struct sslCheckOptions *options)
 {
 	// Variables...
 	int socketDescriptor;
@@ -193,12 +191,12 @@ tcpConnect(struct sslCheckOptions *options)
 	int status;
 
 	// Create Socket
-	socketDescriptor = socket(AF_INET, SOCK_STREAM, 0);
+	socketDescriptor = socket(h->ai_family, h->ai_socktype, h->ai_protocol);
 	if(socketDescriptor < 0)
 		errx(EX_OSERR, "Could not open socket.");
 
 	// Connect
-	status = connect(socketDescriptor, (struct sockaddr *) &options->serverAddress, sizeof(options->serverAddress));
+	status = connect(socketDescriptor, h->ai_addr, sizeof(options->serverAddress));
 	/* Should this be a bail or warn and continue? */
 	if(status < 0)
 	{
@@ -476,7 +474,7 @@ testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
 
 // Test for preferred ciphers
 static int
-defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
+defaultCipher(struct addrinfo hostinfo, struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
 	int cipherStatus;
@@ -485,7 +483,7 @@ defaultCipher(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 	BIO *cipherConnectionBio;
 
 	// Connect to host
-	socketDescriptor = tcpConnect(options);
+	socketDescriptor = tcpConnect(hostinfo, options);
 	if (socketDescriptor == 0)
 		return false;
 
@@ -862,30 +860,29 @@ failed:
 
 // Test a single host and port for ciphers...
 static bool
-testHost(struct sslCheckOptions *options)
+testHost(const char *host, const char *port, struct sslCheckOptions *options)
 {
 	// Variables...
+	int error;
 	struct sslCipher *sslCipherPointer;
-	struct hostent *hostStruct;
+	struct addrinfo hints, *res;
 	bool status = true;
 
 	// Resolve Host Name
-	hostStruct = gethostbyname(options->host);
-	if (hostStruct == NULL)
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = PF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	error = getaddrinfo(host, port, hints, &res) != 0);
+	if (error)
 	{
-		warnx("Could not resolve hostname %s: %s", options->host, hstrerror(h_errno));
+		warnx("Could not resolve hostname %s: %s", host, gai_strerror(error));
 		return false;
 	}
 
-	// Configure Server Address and Port
-	options->serverAddress.sin_family = hostStruct->h_addrtype;
-	memcpy((char *) &options->serverAddress.sin_addr.s_addr, hostStruct->h_addr_list[0], hostStruct->h_length);
-	options->serverAddress.sin_port = htons(options->port);
-
 	// XML Output...
 	if (options->xmlOutput != 0)
-		fprintf(options->xmlOutput, " <ssltest host=\"%s\" port=\"%d\">\n", options->host, options->port);
-	printf("Testing SSL server %s on port %d\n\n", options->host, options->port);
+		fprintf(options->xmlOutput, " <ssltest host=\"%s\" port=\"%d\">\n", host, port);
+	printf("Testing SSL server %s on port %d\n\n", host, port);
 
 	// Test preferred ciphers...
 	printf("  Preferred Server Cipher(s):\n");
@@ -894,23 +891,23 @@ testHost(struct sslCheckOptions *options)
 
 #ifdef SSL_TXT_SSLV2
 	if(options->sslVersion & SSLSCAN_SSLV2)
-		status = status ? defaultCipher(options, SSLv2_client_method()) : false;
+		status = status ? defaultCipher(res, options, SSLv2_client_method()) : false;
 #endif
 #ifdef SSL_TXT_SSLV3
 	if(options->sslVersion & SSLSCAN_SSLV3)
-		status = status ? defaultCipher(options, SSLv3_client_method()) : false;
+		status = status ? defaultCipher(res, options, SSLv3_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1
 	if(options->sslVersion & SSLSCAN_TLSV1)
-		status = status ? defaultCipher(options, TLSv1_client_method()) : false;
+		status = status ? defaultCipher(res, options, TLSv1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_1
 	if(options->sslVersion & SSLSCAN_TLSV1_1)
-		status = status ? defaultCipher(options, TLSv1_1_client_method()) : false;
+		status = status ? defaultCipher(res, options, TLSv1_1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_2
 	if(options->sslVersion & SSLSCAN_TLSV1_2)
-		status = status ? defaultCipher(options, TLSv1_2_client_method()) : false;
+		status = status ? defaultCipher(res, options, TLSv1_2_client_method()) : false;
 #endif
 	printf("\n");
 
@@ -1021,6 +1018,8 @@ main(int argc, char *argv[])
 	char *xmlfile = NULL;
 	char *targetfile = NULL;
 	char *line = NULL;
+	char *host = NULL;
+	char *port = "443";
 	size_t linecapp = 0;
 	ssize_t linelen;
 
@@ -1058,8 +1057,6 @@ main(int argc, char *argv[])
 	// Init...
 	memset(&options, 0, sizeof(struct sslCheckOptions));
 	/* Some of these are already technically false due to the memset, seatbelts.... */
-	options.port = 443;
-	options.host = "127.0.0.1";
 	options.failed = false;
 	options.starttls = false;
 	options.sslVersion = SSLSCAN_ALL;
@@ -1171,10 +1168,10 @@ main(int argc, char *argv[])
 	for(i = 0; i < argc; i++)
 	{
 		// Host (maybe port too)...
-		options.host = strsep(&argv[i], ":");
+		host = strsep(&argv[i], ":");
 		if (argv[i] && argv[i][0])
-			options.port = atoi(argv[i]);
-		status = testHost(&options);
+			port = argv[i];
+		status = testHost(host, port, &options);
 	}
 
 	if (targetfile)
@@ -1187,15 +1184,18 @@ main(int argc, char *argv[])
 		while ((linelen = getline(&line, &linecapp, targetsFile)) > 0)
 		{
 			// Get host...
-			options.host = strsep(&line, ":\n");
+			host = strsep(&line, ":\n");
 			if (line && line[0])
-				options.port = atoi(line);
+				port = line;
 
 			// Test the host...
-			status = testHost(&options);
+			status = testHost(host, port, &options);
 		}
 		if (!feof(targetsFile))
 			err(EX_IOERR, NULL);
+		
+		free(line);
+		line = NULL;
 	}
 
 	// Free Structures
