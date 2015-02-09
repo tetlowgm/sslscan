@@ -82,6 +82,13 @@ struct sslCipher
 	struct sslCipher *next;
 };
 
+struct sslHost
+{
+	const char *name;
+	const char *port;
+	struct addrinfo *hostinfo;
+};
+
 struct sslCheckOptions
 {
 	// Program Options...
@@ -108,9 +115,6 @@ struct sslCheckOptions
 
 	// File Handles...
 	FILE *xmlOutput;
-
-	// TCP Connection Variables...
-	struct sockaddr_in serverAddress;
 
 	// SSL Variables...
 	SSL_CTX *ctx;
@@ -183,24 +187,21 @@ populateCipherList(struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMet
 
 // Create a TCP socket
 static int
-tcpConnect(struct addrinfo h, struct sslCheckOptions *options)
+tcpConnect(struct sslHost *h, struct sslCheckOptions *options)
 {
 	// Variables...
 	int socketDescriptor;
 	char buffer[BUFFERSIZE];
-	int status;
 
 	// Create Socket
-	socketDescriptor = socket(h->ai_family, h->ai_socktype, h->ai_protocol);
+	socketDescriptor = socket(h->hostinfo->ai_family, h->hostinfo->ai_socktype, h->hostinfo->ai_protocol);
 	if(socketDescriptor < 0)
 		errx(EX_OSERR, "Could not open socket.");
 
-	// Connect
-	status = connect(socketDescriptor, h->ai_addr, sizeof(options->serverAddress));
 	/* Should this be a bail or warn and continue? */
-	if(status < 0)
+	if ((connect(socketDescriptor, h->hostinfo->ai_addr, h->hostinfo->ai_addrlen)) < 0)
 	{
-		warnx("Could not open a connection to host %s on port %d.", options->host, options->port);
+		warnx("Could not open a connection to %s:%s.", h->name, h->port);
 		return 0;
 	}
 
@@ -212,7 +213,7 @@ tcpConnect(struct addrinfo h, struct sslCheckOptions *options)
 		if (strncmp(buffer, "220", 3) != 0)
 		{
 			close(socketDescriptor);
-			warnx("%s:%d does not appear to be an SMTP service.", options->host, options->port);
+			warnx("%s:%s does not appear to be an SMTP service.", h->name, h->port);
 			return 0;
 		}
 		send(socketDescriptor, "EHLO titania.co.uk\r\n", 20, 0);
@@ -221,7 +222,7 @@ tcpConnect(struct addrinfo h, struct sslCheckOptions *options)
 		if (strncmp(buffer, "250", 3) != 0)
 		{
 			close(socketDescriptor);
-			warnx("The SMTP service on %s:%d did not respond with status 250 to our HELO.", options->host, options->port);
+			warnx("The SMTP service on %s:%s did not respond with status 250 to our HELO.", h->name, h->port);
 			return 0;
 		}
 		send(socketDescriptor, "STARTTLS\r\n", 10, 0);
@@ -230,7 +231,7 @@ tcpConnect(struct addrinfo h, struct sslCheckOptions *options)
 		if (strncmp(buffer, "220", 3) != 0)
 		{
 			close(socketDescriptor);
-			warnx("The SMTP service on %s:%d does not appear to support STARTTLS.", options->host, options->port);
+			warnx("The SMTP service on %s:%s does not appear to support STARTTLS.", h->name, h->port);
 			return 0;
 		}
 	}
@@ -315,7 +316,7 @@ loadCerts(struct sslCheckOptions *options)
 
 // Test a cipher...
 static bool
-testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
+testCipher(struct sslHost *host, struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
 {
 	// Variables...
 	int cipherStatus;
@@ -330,10 +331,10 @@ testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
 
 	// Create request buffer...
 	memset(requestBuffer, 0, 200);
-	snprintf(requestBuffer, 199, "GET / HTTP/1.0\r\nUser-Agent: SSLScan\r\nHost: %s\r\n\r\n", options->host);
+	snprintf(requestBuffer, 199, "GET / HTTP/1.0\r\nUser-Agent: SSLScan\r\nHost: %s\r\n\r\n", host->name);
 
 	// Connect to host
-	socketDescriptor = tcpConnect(options);
+	socketDescriptor = tcpConnect(host, options);
 	if (socketDescriptor == 0)
 		return false;
 
@@ -474,7 +475,7 @@ testCipher(struct sslCheckOptions *options, struct sslCipher *sslCipherPointer)
 
 // Test for preferred ciphers
 static int
-defaultCipher(struct addrinfo hostinfo, struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
+defaultCipher(struct sslHost *host, struct sslCheckOptions *options, SSL_CONST SSL_METHOD *sslMethod)
 {
 	// Variables...
 	int cipherStatus;
@@ -483,7 +484,7 @@ defaultCipher(struct addrinfo hostinfo, struct sslCheckOptions *options, SSL_CON
 	BIO *cipherConnectionBio;
 
 	// Connect to host
-	socketDescriptor = tcpConnect(hostinfo, options);
+	socketDescriptor = tcpConnect(host, options);
 	if (socketDescriptor == 0)
 		return false;
 
@@ -542,7 +543,7 @@ defaultCipher(struct addrinfo hostinfo, struct sslCheckOptions *options, SSL_CON
 
 // Get certificate...
 static bool
-getCertificate(struct sslCheckOptions *options)
+getCertificate(struct sslHost *host, struct sslCheckOptions *options)
 {
 	// Variables...
 	int cipherStatus = 0;
@@ -564,7 +565,7 @@ getCertificate(struct sslCheckOptions *options)
 	long verifyError = 0;
 
 	// Connect to host
-	socketDescriptor = tcpConnect(options);
+	socketDescriptor = tcpConnect(host, options);
 	if (socketDescriptor == 0)
 		return false;
 
@@ -865,24 +866,28 @@ testHost(const char *host, const char *port, struct sslCheckOptions *options)
 	// Variables...
 	int error;
 	struct sslCipher *sslCipherPointer;
-	struct addrinfo hints, *res;
+	struct addrinfo hints;
+	struct sslHost h;
 	bool status = true;
+
+	h.name = host;
+	h.port = port;
 
 	// Resolve Host Name
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = PF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	error = getaddrinfo(host, port, hints, &res) != 0);
+	error = getaddrinfo(h.name, h.port, &hints, &(h.hostinfo));
 	if (error)
 	{
-		warnx("Could not resolve hostname %s: %s", host, gai_strerror(error));
+		warnx("Could not resolve hostname %s: %s", h.name, gai_strerror(error));
 		return false;
 	}
 
 	// XML Output...
 	if (options->xmlOutput != 0)
-		fprintf(options->xmlOutput, " <ssltest host=\"%s\" port=\"%d\">\n", host, port);
-	printf("Testing SSL server %s on port %d\n\n", host, port);
+		fprintf(options->xmlOutput, " <ssltest host=\"%s\" port=\"%s\">\n", h.name, h.port);
+	printf("Testing SSL server %s on port %s\n\n", h.name, h.port);
 
 	// Test preferred ciphers...
 	printf("  Preferred Server Cipher(s):\n");
@@ -891,23 +896,23 @@ testHost(const char *host, const char *port, struct sslCheckOptions *options)
 
 #ifdef SSL_TXT_SSLV2
 	if(options->sslVersion & SSLSCAN_SSLV2)
-		status = status ? defaultCipher(res, options, SSLv2_client_method()) : false;
+		status = status ? defaultCipher(&h, options, SSLv2_client_method()) : false;
 #endif
 #ifdef SSL_TXT_SSLV3
 	if(options->sslVersion & SSLSCAN_SSLV3)
-		status = status ? defaultCipher(res, options, SSLv3_client_method()) : false;
+		status = status ? defaultCipher(&h, options, SSLv3_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1
 	if(options->sslVersion & SSLSCAN_TLSV1)
-		status = status ? defaultCipher(res, options, TLSv1_client_method()) : false;
+		status = status ? defaultCipher(&h, options, TLSv1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_1
 	if(options->sslVersion & SSLSCAN_TLSV1_1)
-		status = status ? defaultCipher(res, options, TLSv1_1_client_method()) : false;
+		status = status ? defaultCipher(&h, options, TLSv1_1_client_method()) : false;
 #endif
 #ifdef SSL_TXT_TLSV1_2
 	if(options->sslVersion & SSLSCAN_TLSV1_2)
-		status = status ? defaultCipher(res, options, TLSv1_2_client_method()) : false;
+		status = status ? defaultCipher(&h, options, TLSv1_2_client_method()) : false;
 #endif
 	printf("\n");
 
@@ -936,7 +941,7 @@ testHost(const char *host, const char *port, struct sslCheckOptions *options)
 			loadCerts(options);
 
 		// Test
-		status = testCipher(options, sslCipherPointer);
+		status = testCipher(&h, options, sslCipherPointer);
 
 		// Free CTX Object
 		SSL_CTX_free(options->ctx);
@@ -946,8 +951,10 @@ testHost(const char *host, const char *port, struct sslCheckOptions *options)
 
 	if (status && options->printcert)
 	{
-		status = getCertificate(options);
+		status = getCertificate(&h, options);
 	}
+
+	freeaddrinfo(h.hostinfo);
 
 	// XML Output...
 	if (options->xmlOutput != 0)
@@ -1193,7 +1200,7 @@ main(int argc, char *argv[])
 		}
 		if (!feof(targetsFile))
 			err(EX_IOERR, NULL);
-		
+
 		free(line);
 		line = NULL;
 	}
