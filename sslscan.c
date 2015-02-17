@@ -27,6 +27,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <sys/queue.h>
+
 #include <err.h>
 #include <getopt.h>
 #include <netdb.h>
@@ -75,10 +77,43 @@ struct sslhost {
 	struct addrinfo *hostinfo;
 };
 
+struct sslcipher {
+	STAILQ_ENTRY(sslcipher) entries;
+	const char *name;
+	int bits;
+	SSL_CONST SSL_METHOD *method;
+};
+STAILQ_HEAD(,sslcipher) cipherlist;
+
+static bool	checkcipher(struct sslhost *, SSL_CONST SSL_METHOD *, struct sslcipher *);
+static void	initcipherlist(SSL_CONST SSL_METHOD *);
 static int	tcpconnect(struct sslhost *);
-static bool	checkcipher(struct sslhost *, SSL_CONST SSL_METHOD *, const char *);
 static bool	testhost(const char *, const char *);
 static void	usage(void);
+
+static void
+initcipherlist(SSL_CONST SSL_METHOD *meth)
+{
+	struct sslcipher *c;
+	int i;
+	STACK_OF(SSL_CIPHER) *clist;
+	SSL *ssl;
+
+	if ((ssl = SSL_new(ssl_ctx)) == NULL)
+		errx(EX_SOFTWARE, "Could not create SSL object: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	if (SSL_set_ssl_method(ssl, meth) == 0)
+		errx(EX_SOFTWARE, "Could not set SSL method: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	for(clist = SSL_get_ciphers(ssl), i = 0; i < sk_SSL_CIPHER_num(clist); i++) {
+		c = malloc(sizeof(struct sslcipher));
+		c->name = SSL_CIPHER_get_name(sk_SSL_CIPHER_value(clist, i));
+		c->bits = SSL_CIPHER_get_bits(sk_SSL_CIPHER_value(clist, i), NULL);
+		c->method = meth;
+		STAILQ_INSERT_TAIL(&cipherlist, c, entries);
+	}
+	SSL_free(ssl);
+}
 
 static int
 tcpconnect(struct sslhost* h)
@@ -100,11 +135,12 @@ tcpconnect(struct sslhost* h)
 }
 
 static bool
-checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, const char *cipher)
+checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, struct sslcipher *cipher)
 {
-	int fd, ret;
+	int fd, ret, bits;
 	bool print;
 	char *reason;
+	const char *name;
 	SSL *ssl;
 	BIO *bio;
 
@@ -114,7 +150,7 @@ checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, const char *cipher)
 	if (SSL_set_ssl_method(ssl, meth) == 0)
 		errx(EX_SOFTWARE, "Could not set SSL method: %s", ERR_error_string(ERR_get_error(), NULL));
 
-	if (cipher != NULL && (SSL_set_cipher_list(ssl, cipher) == 0))
+	if (cipher != NULL && (SSL_set_cipher_list(ssl, cipher->name) == 0))
 		errx(EX_SOFTWARE, "Could not set SSL cipher: %s", ERR_error_string(ERR_get_error(), NULL));
 
 	if ((fd = tcpconnect(h)) < 0)
@@ -126,23 +162,33 @@ checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, const char *cipher)
 	SSL_set_bio(ssl, bio, bio);
 	ret = SSL_connect(ssl);
 
-	/* If cipher is NULL, then we are doing the default, we don't need to say if it was accepted or not. */
 	switch (ret) {
 	case 1:
+		/* If cipher is NULL, then we are doing default, we don't need to say if it was accepted or not. */
 		print = true;
 		reason = cipher ? "Accepted " : "";
+		name = SSL_get_cipher_name(ssl);
+		bits = SSL_get_cipher_bits(ssl, NULL);
 		break;
 	case 0:
 		print = false;
-		reason = cipher ? "Rejected " : "";
+		reason = "Rejected ";
+		if (cipher) {
+			name = cipher->name;
+			bits = cipher->bits;
+		}
 		break;
 	default:
 		print = false;
-		reason = cipher ? "Failed   " : "";
+		reason = "Failed   ";
+		if (cipher) {
+			name = cipher->name;
+			bits = cipher->bits;
+		}
 	}
 
 	if (print || (printfail && cipher)) {
-		printf("    %s%-7s  %3d bits  %s\n", reason, SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), cipher ? cipher : SSL_get_cipher_name(ssl));
+		printf("    %s%-7s  %3d bits  %s\n", reason, SSL_get_version(ssl), bits, name);
 		SSL_shutdown(ssl);
 	}
 
@@ -158,6 +204,7 @@ testhost(const char *host, const char *port)
 {
 	bool status = true;
 	int error;
+	struct sslcipher *cp;
 	struct sslhost h;
 	struct addrinfo hints;
 
@@ -201,7 +248,10 @@ testhost(const char *host, const char *port)
 
 	/* Test all ciphers. */
 	printf("  Supported server ciphers:\n");
-	checkcipher(&h, TLSv1_2_client_method(), "RC4-SHA");
+	STAILQ_FOREACH(cp, &cipherlist, entries) {
+		if (status)
+			status = checkcipher(&h, cp->method, cp);
+	}
 
 	freeaddrinfo(h.hostinfo);
 	return(true);
@@ -301,6 +351,23 @@ main(int argc, char *argv[])
 	/* For the SSL_CTX, we want *ALL* ciphers. Even the ones that aren't in ALL (seriously?). */
 	if ((SSL_CTX_set_cipher_list(ssl_ctx, "ALL:COMPLEMENTOFALL")) == 0)
 		errx(EX_SOFTWARE, "Could not set cipher list: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	STAILQ_INIT(&cipherlist);
+#ifdef SSL_TXT_TLSV1_2
+	initcipherlist(TLSv1_2_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_1
+	initcipherlist(TLSv1_1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1
+	initcipherlist(TLSv1_client_method());
+#endif
+#ifdef SSL_TXT_SSLV3
+	initcipherlist(SSLv3_client_method());
+#endif
+#ifdef SSL_TXT_SSLV2
+	initcipherlist(SSLv2_client_method());
+#endif
 
 	status = 0;
 	for (i = 0; i < argc; i++) {
