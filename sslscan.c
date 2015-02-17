@@ -24,17 +24,22 @@
  *  SUCH DAMAGE.
  */
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 #include <err.h>
 #include <getopt.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
+#include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
 
-#if 0
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+
 /*
  * OpenSSL 1.0.0 introduced const qualifiers for SSL_METHOD. Try
  * to surpress warnings for it for both versions.
@@ -44,7 +49,6 @@
 #else
 #define SSL_CONST
 #endif
-#endif /* 0 */
 
 #define SSLSCAN_ALL 0xFF
 #define SSLSCAN_NONE 0x0
@@ -65,14 +69,114 @@ bool	 printfail = false;
 int	 sslversion = SSLSCAN_ALL;
 SSL_CTX	*ssl_ctx;
 
-static int	testhost(const char *host, const char *port);
+struct sslhost {
+	const char *name;
+	const char *port;
+	struct addrinfo *hostinfo;
+};
+
+static int	tcpconnect(struct sslhost *);
+static bool	defaultcipher(struct sslhost *, SSL_CONST SSL_METHOD *);
+static bool	testhost(const char *, const char *);
 static void	usage(void);
 
 static int
+tcpconnect(struct sslhost* h)
+{
+	int fd;
+
+	/* If OpenSSL didn't suck so bad, I wouldn't have to do a lot of this myself. */
+	fd = socket(h->hostinfo->ai_family, h->hostinfo->ai_socktype, h->hostinfo->ai_protocol);
+	if (fd < 0)
+		errx(EX_OSERR, "Could not open socket.");
+
+	/* Should this be a bail or warn and continue? */
+	if ((connect(fd, h->hostinfo->ai_addr, h->hostinfo->ai_addrlen)) < 0) {
+		warn("Could not open a connection to %s:%s", h->name, h->port);
+		return(-1);
+	}
+
+	return(fd);
+}
+
+static bool
+defaultcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth)
+{
+	int fd, ret;
+	SSL *ssl;
+	BIO *bio;
+
+	if ((ssl = SSL_new(ssl_ctx)) == NULL)
+		errx(EX_SOFTWARE, "Could not create SSL object: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	if ((SSL_set_ssl_method(ssl, meth)) == 0)
+		errx(EX_SOFTWARE, "Could not set SSL method: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	if ((fd = tcpconnect(h)) < 0)
+		return(false);
+
+	bio = BIO_new_socket(fd, BIO_NOCLOSE);
+	SSL_set_bio(ssl, bio, bio);
+	ret = SSL_connect(ssl);
+	if (ret == 1) {
+		printf("    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), SSL_get_cipher_name(ssl));
+		SSL_shutdown(ssl);
+	}
+
+	SSL_free(ssl);
+	close(fd);
+
+	return(true);
+}
+
+static bool
 testhost(const char *host, const char *port)
 {
+	bool status = true;
+	int error;
+	struct sslhost h;
+	struct addrinfo hints;
+
+	h.name = host;
+	h.port = port;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = PF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	error = getaddrinfo(h.name, h.port, &hints, &(h.hostinfo));
+	if (error) {
+		warnx("Could not resolve hostname %s: %s", h.name, gai_strerror(error));
+		return(false);
+	}
+
 	printf("Testing host: %s:%s\n", host, port);
-	return(0);
+
+	printf("  Preferred server ciphers:\n");
+#ifdef SSL_TXT_TLSV1_2
+	if (status && (sslversion & SSLSCAN_TLSV1_2))
+		status = defaultcipher(&h, TLSv1_2_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1_1
+	if (status && (sslversion & SSLSCAN_TLSV1_1))
+		status = defaultcipher(&h, TLSv1_1_client_method());
+#endif
+#ifdef SSL_TXT_TLSV1
+	if (status && (sslversion & SSLSCAN_TLSV1))
+		status = defaultcipher(&h, TLSv1_client_method());
+#endif
+#ifdef SSL_TXT_SSLV3
+	if (status && (sslversion & SSLSCAN_SSLV3))
+		status = defaultcipher(&h, SSLv3_client_method());
+#endif
+#ifdef SSL_TXT_SSLV2
+	if (status && (sslversion & SSLSCAN_SSLV2))
+		status = defaultcipher(&h, SSLv2_client_method());
+#endif
+
+	printf("\n");
+
+	freeaddrinfo(h.hostinfo);
+	return(true);
 }
 
 static void
@@ -88,20 +192,20 @@ usage(void)
 	fprintf(stderr, "Unless specified, all SSL protocol versions are checked.\n");
 	fprintf(stderr, "SSL protocol version support dependent on OpenSSL library support.\n");
 	fprintf(stderr, "  Supported protocol versions:");
-#ifdef SSL_TXT_SSLV2
-	fprintf(stderr, " SSLv2");
-#endif
-#ifdef SSL_TXT_SSLV3
-	fprintf(stderr, " SSLv3");
-#endif
-#ifdef SSL_TXT_TLSV1
-	fprintf(stderr, " TLSv1.0");
+#ifdef SSL_TXT_TLSV1_2
+	fprintf(stderr, " TLSv1.2");
 #endif
 #ifdef SSL_TXT_TLSV1_1
 	fprintf(stderr, " TLSv1.1");
 #endif
-#ifdef SSL_TXT_TLSV1_2
-	fprintf(stderr, " TLSv1.2");
+#ifdef SSL_TXT_TLSV1
+	fprintf(stderr, " TLSv1.0");
+#endif
+#ifdef SSL_TXT_SSLV3
+	fprintf(stderr, " SSLv3");
+#endif
+#ifdef SSL_TXT_SSLV2
+	fprintf(stderr, " SSLv2");
 #endif
 	fprintf(stderr, "\n");
 
@@ -113,7 +217,7 @@ main(int argc, char *argv[])
 {
 	int ch, i, status;
 	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
-	char *host, *port;
+	char *host, *port, *chp;
 
 	struct option opts[] = {
 		{ "help",	no_argument,	NULL, 'h' },
@@ -168,13 +272,24 @@ main(int argc, char *argv[])
 
 	status = 0;
 	for (i = 0; i < argc; i++) {
-		/* XXX: Check for an IPv6 address. This fails spectacularly on IPv6 addresses. */
-		host = strsep(&argv[i], ":");
-		if (argv[i] && argv[i][0])
-			port = argv[i];
-		else
-			port = "443";
-		status += testhost(host, port);
+		/* XXX: There is probably a better way to detect a raw IPv6 address. */
+		port = "https";
+		/* Check for a raw IPv6 address enclosed in brackets [::1]. */
+		if (argv[i][0] == '[') {
+			/* That said, we don't actually want the brackets. */
+			host = argv[i]+1;
+			chp = strchr(argv[i], ']');
+			if (chp != NULL)
+				*chp = '\0';
+			if (*(chp+1) == ':')
+				port = chp+2;
+		} else {
+			host = strsep(&argv[i], ":");
+			if (argv[i] && argv[i][0])
+				port = argv[i];
+		}
+		if (testhost(host, port) == false)
+			status++;
 	}
 
 	if (status == 0)
