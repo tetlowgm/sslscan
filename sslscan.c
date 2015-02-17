@@ -24,12 +24,27 @@
  *  SUCH DAMAGE.
  */
 
+#include <err.h>
 #include <getopt.h>
+#include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sysexits.h>
+
+#if 0
+/*
+ * OpenSSL 1.0.0 introduced const qualifiers for SSL_METHOD. Try
+ * to surpress warnings for it for both versions.
+ */
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
+#define SSL_CONST const
+#else
+#define SSL_CONST
+#endif
+#endif /* 0 */
 
 #define SSLSCAN_ALL 0xFF
 #define SSLSCAN_NONE 0x0
@@ -45,11 +60,20 @@
 #define SSLSCAN_TLSV1_1 0x08
 #define SSLSCAN_TLSV1_2 0x10
 
-bool	printcert = false;
-bool	printfail = false;
-int	sslversion = SSLSCAN_ALL;
+bool	 printcert = false;
+bool	 printfail = false;
+int	 sslversion = SSLSCAN_ALL;
+SSL_CTX	*ssl_ctx;
 
+static int	testhost(const char *host, const char *port);
 static void	usage(void);
+
+static int
+testhost(const char *host, const char *port)
+{
+	printf("Testing host: %s:%s\n", host, port);
+	return(0);
+}
 
 static void
 usage(void)
@@ -87,8 +111,9 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	int ch;
+	int ch, i, status;
 	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
+	char *host, *port;
 
 	struct option opts[] = {
 		{ "help",	no_argument,	NULL, 'h' },
@@ -135,5 +160,25 @@ main(int argc, char *argv[])
 	if (argc == 0)
 		usage();
 
-	return 0;
+	SSL_load_error_strings();
+	SSL_library_init();
+
+	if ((ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
+		errx(EX_SOFTWARE, "Could not create SSL_CTX object: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	status = 0;
+	for (i = 0; i < argc; i++) {
+		/* XXX: Check for an IPv6 address. This fails spectacularly on IPv6 addresses. */
+		host = strsep(&argv[i], ":");
+		if (argv[i] && argv[i][0])
+			port = argv[i];
+		else
+			port = "443";
+		status += testhost(host, port);
+	}
+
+	if (status == 0)
+		return(0);
+	else
+		return(EX_SOFTWARE);
 }
