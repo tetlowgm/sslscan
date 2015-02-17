@@ -76,7 +76,7 @@ struct sslhost {
 };
 
 static int	tcpconnect(struct sslhost *);
-static bool	defaultcipher(struct sslhost *, SSL_CONST SSL_METHOD *);
+static bool	checkcipher(struct sslhost *, SSL_CONST SSL_METHOD *, const char *);
 static bool	testhost(const char *, const char *);
 static void	usage(void);
 
@@ -100,29 +100,53 @@ tcpconnect(struct sslhost* h)
 }
 
 static bool
-defaultcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth)
+checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, const char *cipher)
 {
 	int fd, ret;
+	bool print;
+	char *reason;
 	SSL *ssl;
 	BIO *bio;
 
 	if ((ssl = SSL_new(ssl_ctx)) == NULL)
 		errx(EX_SOFTWARE, "Could not create SSL object: %s", ERR_error_string(ERR_get_error(), NULL));
 
-	if ((SSL_set_ssl_method(ssl, meth)) == 0)
+	if (SSL_set_ssl_method(ssl, meth) == 0)
 		errx(EX_SOFTWARE, "Could not set SSL method: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	if (cipher != NULL && (SSL_set_cipher_list(ssl, cipher) == 0))
+		errx(EX_SOFTWARE, "Could not set SSL cipher: %s", ERR_error_string(ERR_get_error(), NULL));
 
 	if ((fd = tcpconnect(h)) < 0)
 		return(false);
 
-	bio = BIO_new_socket(fd, BIO_NOCLOSE);
+	if ((bio = BIO_new_socket(fd, BIO_NOCLOSE)) == NULL)
+		errx(EX_SOFTWARE, "Could not create BIO: %s", ERR_error_string(ERR_get_error(), NULL));
+
 	SSL_set_bio(ssl, bio, bio);
 	ret = SSL_connect(ssl);
-	if (ret == 1) {
-		printf("    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), SSL_get_cipher_name(ssl));
+
+	/* If cipher is NULL, then we are doing the default, we don't need to say if it was accepted or not. */
+	switch (ret) {
+	case 1:
+		print = true;
+		reason = cipher ? "Accepted " : "";
+		break;
+	case 0:
+		print = false;
+		reason = cipher ? "Rejected " : "";
+		break;
+	default:
+		print = false;
+		reason = cipher ? "Failed   " : "";
+	}
+
+	if (print || (printfail && cipher)) {
+		printf("    %s%-7s  %3d bits  %s\n", reason, SSL_get_version(ssl), SSL_get_cipher_bits(ssl,NULL), cipher ? cipher : SSL_get_cipher_name(ssl));
 		SSL_shutdown(ssl);
 	}
 
+	/* SSL_free takes care of the BIO (and probably closing the fd, no harm there though). */
 	SSL_free(ssl);
 	close(fd);
 
@@ -151,29 +175,33 @@ testhost(const char *host, const char *port)
 
 	printf("Testing host: %s:%s\n", host, port);
 
+	/* Test for server preferred ciphers. */
 	printf("  Preferred server ciphers:\n");
 #ifdef SSL_TXT_TLSV1_2
 	if (status && (sslversion & SSLSCAN_TLSV1_2))
-		status = defaultcipher(&h, TLSv1_2_client_method());
+		status = checkcipher(&h, TLSv1_2_client_method(), NULL);
 #endif
 #ifdef SSL_TXT_TLSV1_1
 	if (status && (sslversion & SSLSCAN_TLSV1_1))
-		status = defaultcipher(&h, TLSv1_1_client_method());
+		status = checkcipher(&h, TLSv1_1_client_method(), NULL);
 #endif
 #ifdef SSL_TXT_TLSV1
 	if (status && (sslversion & SSLSCAN_TLSV1))
-		status = defaultcipher(&h, TLSv1_client_method());
+		status = checkcipher(&h, TLSv1_client_method(), NULL);
 #endif
 #ifdef SSL_TXT_SSLV3
 	if (status && (sslversion & SSLSCAN_SSLV3))
-		status = defaultcipher(&h, SSLv3_client_method());
+		status = checkcipher(&h, SSLv3_client_method(), NULL);
 #endif
 #ifdef SSL_TXT_SSLV2
 	if (status && (sslversion & SSLSCAN_SSLV2))
-		status = defaultcipher(&h, SSLv2_client_method());
+		status = checkcipher(&h, SSLv2_client_method(), NULL);
 #endif
-
 	printf("\n");
+
+	/* Test all ciphers. */
+	printf("  Supported server ciphers:\n");
+	checkcipher(&h, TLSv1_2_client_method(), "RC4-SHA");
 
 	freeaddrinfo(h.hostinfo);
 	return(true);
@@ -269,6 +297,10 @@ main(int argc, char *argv[])
 
 	if ((ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
 		errx(EX_SOFTWARE, "Could not create SSL_CTX object: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	/* For the SSL_CTX, we want *ALL* ciphers. Even the ones that aren't in ALL (seriously?). */
+	if ((SSL_CTX_set_cipher_list(ssl_ctx, "ALL:COMPLEMENTOFALL")) == 0)
+		errx(EX_SOFTWARE, "Could not set cipher list: %s", ERR_error_string(ERR_get_error(), NULL));
 
 	status = 0;
 	for (i = 0; i < argc; i++) {
