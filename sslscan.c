@@ -52,6 +52,9 @@
 #define SSL_CONST
 #endif
 
+/* Maximum length of the cipher string. */
+#define CIPHERSTRLEN 4096
+
 #define SSLSCAN_ALL 0xFF
 #define SSLSCAN_NONE 0x0
 /*
@@ -77,43 +80,12 @@ struct sslhost {
 	struct addrinfo *hostinfo;
 };
 
-struct sslcipher {
-	STAILQ_ENTRY(sslcipher) entries;
-	const char *name;
-	int bits;
-	SSL_CONST SSL_METHOD *method;
-};
-STAILQ_HEAD(,sslcipher) cipherlist;
-
-static bool	checkcipher(struct sslhost *, SSL_CONST SSL_METHOD *, struct sslcipher *);
-static void	initcipherlist(SSL_CONST SSL_METHOD *);
+static SSL *	sslsetup(SSL_CONST SSL_METHOD *, const char *);
 static int	tcpconnect(struct sslhost *);
+static void	testciphers(struct sslhost *, SSL_CONST SSL_METHOD *, char *);
 static bool	testhost(const char *, const char *);
+static void	unsupportedcipherlist(SSL_CONST SSL_METHOD *, const char *);
 static void	usage(void);
-
-static void
-initcipherlist(SSL_CONST SSL_METHOD *meth)
-{
-	struct sslcipher *c;
-	int i;
-	STACK_OF(SSL_CIPHER) *clist;
-	SSL *ssl;
-
-	if ((ssl = SSL_new(ssl_ctx)) == NULL)
-		errx(EX_SOFTWARE, "Could not create SSL object: %s", ERR_error_string(ERR_get_error(), NULL));
-
-	if (SSL_set_ssl_method(ssl, meth) == 0)
-		errx(EX_SOFTWARE, "Could not set SSL method: %s", ERR_error_string(ERR_get_error(), NULL));
-
-	for(clist = SSL_get_ciphers(ssl), i = 0; i < sk_SSL_CIPHER_num(clist); i++) {
-		c = malloc(sizeof(struct sslcipher));
-		c->name = SSL_CIPHER_get_name(sk_SSL_CIPHER_value(clist, i));
-		c->bits = SSL_CIPHER_get_bits(sk_SSL_CIPHER_value(clist, i), NULL);
-		c->method = meth;
-		STAILQ_INSERT_TAIL(&cipherlist, c, entries);
-	}
-	SSL_free(ssl);
-}
 
 static int
 tcpconnect(struct sslhost* h)
@@ -134,27 +106,52 @@ tcpconnect(struct sslhost* h)
 	return(fd);
 }
 
-static bool
-checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, struct sslcipher *cipher)
+static SSL *
+sslsetup(SSL_CONST SSL_METHOD *meth, const char *ciphers)
 {
-	int fd, ret, bits;
-	bool print;
-	char *reason;
-	const char *name;
 	SSL *ssl;
-	BIO *bio;
+
+	if (SSL_CTX_set_ssl_version(ssl_ctx, meth) == 0)
+		errx(EX_SOFTWARE, "Could not set SSL version: %s", ERR_error_string(ERR_get_error(), NULL));
+
+	if (SSL_CTX_set_cipher_list(ssl_ctx, ciphers) == 0)
+		errx(EX_SOFTWARE, "Could not set SSL cipher: %s", ERR_error_string(ERR_get_error(), NULL));
 
 	if ((ssl = SSL_new(ssl_ctx)) == NULL)
 		errx(EX_SOFTWARE, "Could not create SSL object: %s", ERR_error_string(ERR_get_error(), NULL));
 
-	if (SSL_set_ssl_method(ssl, meth) == 0)
-		errx(EX_SOFTWARE, "Could not set SSL method: %s", ERR_error_string(ERR_get_error(), NULL));
+	return ssl;
+}
 
-	if (cipher != NULL && (SSL_set_cipher_list(ssl, cipher->name) == 0))
-		errx(EX_SOFTWARE, "Could not set SSL cipher: %s", ERR_error_string(ERR_get_error(), NULL));
+static void
+unsupportedcipherlist(SSL_CONST SSL_METHOD *meth, const char *ciphers)
+{
+	int i;
+	STACK_OF(SSL_CIPHER) *clist;
+	SSL_CIPHER *cipher;
+	SSL *ssl;
+
+	ssl = sslsetup(meth, ciphers);
+	clist = SSL_get_ciphers(ssl);
+
+	for(i = 0; i < sk_SSL_CIPHER_num(clist); i++) {
+		cipher = sk_SSL_CIPHER_value(clist, i);
+		printf("    Unsupported %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_CIPHER_get_bits(cipher, NULL), SSL_CIPHER_get_name(cipher));
+	}
+	SSL_free(ssl);
+}
+
+static void
+testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers)
+{
+	int fd, ret;
+	SSL *ssl;
+	BIO *bio;
+
+	ssl = sslsetup(meth, ciphers);
 
 	if ((fd = tcpconnect(h)) < 0)
-		return(false);
+		return;
 
 	if ((bio = BIO_new_socket(fd, BIO_NOCLOSE)) == NULL)
 		errx(EX_SOFTWARE, "Could not create BIO: %s", ERR_error_string(ERR_get_error(), NULL));
@@ -162,51 +159,26 @@ checkcipher(struct sslhost *h, SSL_CONST SSL_METHOD *meth, struct sslcipher *cip
 	SSL_set_bio(ssl, bio, bio);
 	ret = SSL_connect(ssl);
 
-	switch (ret) {
-	case 1:
-		/* If cipher is NULL, then we are doing default, we don't need to say if it was accepted or not. */
-		print = true;
-		reason = cipher ? "Accepted " : "";
-		name = SSL_get_cipher_name(ssl);
-		bits = SSL_get_cipher_bits(ssl, NULL);
-		break;
-	case 0:
-		print = false;
-		reason = "Rejected ";
-		if (cipher) {
-			name = cipher->name;
-			bits = cipher->bits;
-		}
-		break;
-	default:
-		print = false;
-		reason = "Failed   ";
-		if (cipher) {
-			name = cipher->name;
-			bits = cipher->bits;
-		}
-	}
-
-	if (print || (printfail && cipher)) {
-		printf("    %s%-7s  %3d bits  %s\n", reason, SSL_get_version(ssl), bits, name);
+	if (ret == 1) {
+		printf("    Accepted    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl, NULL), SSL_get_cipher_name(ssl));
+		strlcat(ciphers, ":!", CIPHERSTRLEN);
+		strlcat(ciphers, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
 		SSL_shutdown(ssl);
 	}
-
-	/* SSL_free takes care of the BIO (and probably closing the fd, no harm there though). */
 	SSL_free(ssl);
 	close(fd);
 
-	return(true);
+	if (ret == 1)
+		testciphers(h, meth, ciphers);
 }
 
 static bool
 testhost(const char *host, const char *port)
 {
-	bool status = true;
 	int error;
-	struct sslcipher *cp;
 	struct sslhost h;
 	struct addrinfo hints;
+	char cipherstr[CIPHERSTRLEN];
 
 	h.name = host;
 	h.port = port;
@@ -223,35 +195,47 @@ testhost(const char *host, const char *port)
 	printf("Testing host: %s:%s\n", host, port);
 
 	/* Test for server preferred ciphers. */
-	printf("  Preferred server ciphers:\n");
+	printf("  Server cipher order:\n");
 #ifdef SSL_TXT_TLSV1_2
-	if (status && (sslversion & SSLSCAN_TLSV1_2))
-		status = checkcipher(&h, TLSv1_2_client_method(), NULL);
+	if (sslversion & SSLSCAN_TLSV1_2) {
+		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
+		testciphers(&h, TLSv1_2_client_method(), cipherstr);
+		if (printfail)
+			unsupportedcipherlist(TLSv1_2_client_method(), cipherstr);
+	}
 #endif
 #ifdef SSL_TXT_TLSV1_1
-	if (status && (sslversion & SSLSCAN_TLSV1_1))
-		status = checkcipher(&h, TLSv1_1_client_method(), NULL);
+	if (sslversion & SSLSCAN_TLSV1_1) {
+		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
+		testciphers(&h, TLSv1_1_client_method(), cipherstr);
+		if (printfail)
+			unsupportedcipherlist(TLSv1_1_client_method(), cipherstr);
+	}
 #endif
 #ifdef SSL_TXT_TLSV1
-	if (status && (sslversion & SSLSCAN_TLSV1))
-		status = checkcipher(&h, TLSv1_client_method(), NULL);
+	if (sslversion & SSLSCAN_TLSV1) {
+		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
+		testciphers(&h, TLSv1_client_method(), cipherstr);
+		if (printfail)
+			unsupportedcipherlist(TLSv1_client_method(), cipherstr);
+	}
 #endif
 #ifdef SSL_TXT_SSLV3
-	if (status && (sslversion & SSLSCAN_SSLV3))
-		status = checkcipher(&h, SSLv3_client_method(), NULL);
+	if (sslversion & SSLSCAN_SSLV3) {
+		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
+		testciphers(&h, SSLv3_client_method(), cipherstr);
+		if (printfail)
+			unsupportedcipherlist(SSLv3_client_method(), cipherstr);
+	}
 #endif
 #ifdef SSL_TXT_SSLV2
-	if (status && (sslversion & SSLSCAN_SSLV2))
-		status = checkcipher(&h, SSLv2_client_method(), NULL);
-#endif
-	printf("\n");
-
-	/* Test all ciphers. */
-	printf("  Supported server ciphers:\n");
-	STAILQ_FOREACH(cp, &cipherlist, entries) {
-		if (status)
-			status = checkcipher(&h, cp->method, cp);
+	if (sslversion & SSLSCAN_SSLV2) {
+		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
+		testciphers(&h, SSLv2_client_method(), cipherstr);
+		if (printfail)
+			unsupportedcipherlist(SSLv2_client_method(), cipherstr);
 	}
+#endif
 
 	freeaddrinfo(h.hostinfo);
 	return(true);
@@ -348,27 +332,6 @@ main(int argc, char *argv[])
 	if ((ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
 		errx(EX_SOFTWARE, "Could not create SSL_CTX object: %s", ERR_error_string(ERR_get_error(), NULL));
 
-	/* For the SSL_CTX, we want *ALL* ciphers. Even the ones that aren't in ALL (seriously?). */
-	if ((SSL_CTX_set_cipher_list(ssl_ctx, "ALL:COMPLEMENTOFALL")) == 0)
-		errx(EX_SOFTWARE, "Could not set cipher list: %s", ERR_error_string(ERR_get_error(), NULL));
-
-	STAILQ_INIT(&cipherlist);
-#ifdef SSL_TXT_TLSV1_2
-	initcipherlist(TLSv1_2_client_method());
-#endif
-#ifdef SSL_TXT_TLSV1_1
-	initcipherlist(TLSv1_1_client_method());
-#endif
-#ifdef SSL_TXT_TLSV1
-	initcipherlist(TLSv1_client_method());
-#endif
-#ifdef SSL_TXT_SSLV3
-	initcipherlist(SSLv3_client_method());
-#endif
-#ifdef SSL_TXT_SSLV2
-	initcipherlist(SSLv2_client_method());
-#endif
-
 	status = 0;
 	for (i = 0; i < argc; i++) {
 		/* XXX: There is probably a better way to detect a raw IPv6 address. */
@@ -390,6 +353,8 @@ main(int argc, char *argv[])
 		if (testhost(host, port) == false)
 			status++;
 	}
+
+	SSL_CTX_free(ssl_ctx);
 
 	if (status == 0)
 		return(0);
