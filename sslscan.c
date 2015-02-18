@@ -73,8 +73,8 @@
 #define SSLSCAN_TLSV1_1 0x08
 #define SSLSCAN_TLSV1_2 0x10
 
-bool	 printcert = false;
-bool	 printfail = false;
+bool	 cflag = false;			/* Print the cipher string.	*/
+bool	 printfail = false;		/* Print failed ciphers.	*/
 int	 sslversion = SSLSCAN_ALL;
 SSL_CTX	*ssl_ctx;
 
@@ -86,7 +86,7 @@ struct sslhost {
 
 static SSL *	sslsetup(SSL_CONST SSL_METHOD *, const char *);
 static int	tcpconnect(struct sslhost *);
-static void	testciphers(struct sslhost *, SSL_CONST SSL_METHOD *, char *);
+static void	testciphers(struct sslhost *, SSL_CONST SSL_METHOD *, char *, char *);
 static bool	testhost(const char *, const char *);
 static void	unsupportedcipherlist(SSL_CONST SSL_METHOD *, const char *);
 static void	usage(void);
@@ -146,7 +146,7 @@ unsupportedcipherlist(SSL_CONST SSL_METHOD *meth, const char *ciphers)
 }
 
 static void
-testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers)
+testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers, char *cstr)
 {
 	int fd, ret;
 	SSL *ssl;
@@ -167,13 +167,16 @@ testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers)
 		printf("    Accepted    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl, NULL), SSL_get_cipher_name(ssl));
 		strlcat(ciphers, ":!", CIPHERSTRLEN);
 		strlcat(ciphers, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
+		if (cstr[0] != '\0')
+			strlcat(cstr, ":", CIPHERSTRLEN);
+		strlcat(cstr, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
 		SSL_shutdown(ssl);
 	}
 	SSL_free(ssl);
 	close(fd);
 
 	if (ret == 1)
-		testciphers(h, meth, ciphers);
+		testciphers(h, meth, ciphers, cstr);
 }
 
 static bool
@@ -182,7 +185,7 @@ testhost(const char *host, const char *port)
 	int error;
 	struct sslhost h;
 	struct addrinfo hints;
-	char cipherstr[CIPHERSTRLEN];
+	char cipherstr[CIPHERSTRLEN], cstr[CIPHERSTRLEN];
 
 	h.name = host;
 	h.port = port;
@@ -203,41 +206,56 @@ testhost(const char *host, const char *port)
 #ifdef SSL_TXT_TLSV1_2
 	if (sslversion & SSLSCAN_TLSV1_2) {
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		testciphers(&h, TLSv1_2_client_method(), cipherstr);
+		strlcpy(cstr, "", CIPHERSTRLEN);
+		testciphers(&h, TLSv1_2_client_method(), cipherstr, cstr);
 		if (printfail)
 			unsupportedcipherlist(TLSv1_2_client_method(), cipherstr);
+		if (cflag)
+			printf("  TLSv1.2 Cipher String:\n    %s\n", cstr);
 	}
 #endif
 #ifdef SSL_TXT_TLSV1_1
 	if (sslversion & SSLSCAN_TLSV1_1) {
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		testciphers(&h, TLSv1_1_client_method(), cipherstr);
+		strlcpy(cstr, "", CIPHERSTRLEN);
+		testciphers(&h, TLSv1_1_client_method(), cipherstr, cstr);
 		if (printfail)
 			unsupportedcipherlist(TLSv1_1_client_method(), cipherstr);
+		if (cflag)
+			printf("  TLSv1.1 Cipher String:\n    %s\n", cstr);
 	}
 #endif
 #ifdef SSL_TXT_TLSV1
 	if (sslversion & SSLSCAN_TLSV1) {
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		testciphers(&h, TLSv1_client_method(), cipherstr);
+		strlcpy(cstr, "", CIPHERSTRLEN);
+		testciphers(&h, TLSv1_client_method(), cipherstr, cstr);
 		if (printfail)
 			unsupportedcipherlist(TLSv1_client_method(), cipherstr);
+		if (cflag)
+			printf("  TLSv1 Cipher String:\n    %s\n", cstr);
 	}
 #endif
 #ifdef SSL_TXT_SSLV3
 	if (sslversion & SSLSCAN_SSLV3) {
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		testciphers(&h, SSLv3_client_method(), cipherstr);
+		strlcpy(cstr, "", CIPHERSTRLEN);
+		testciphers(&h, SSLv3_client_method(), cipherstr, cstr);
 		if (printfail)
 			unsupportedcipherlist(SSLv3_client_method(), cipherstr);
+		if (cflag)
+			printf("  SSLv3 Cipher String:\n    %s\n", cstr);
 	}
 #endif
 #ifdef SSL_TXT_SSLV2
 	if (sslversion & SSLSCAN_SSLV2) {
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		testciphers(&h, SSLv2_client_method(), cipherstr);
+		strlcpy(cstr, "", CIPHERSTRLEN);
+		testciphers(&h, SSLv2_client_method(), cipherstr, cstr);
 		if (printfail)
 			unsupportedcipherlist(SSLv2_client_method(), cipherstr);
+		if (cflag)
+			printf("  SSLv2 Cipher String:\n    %s\n", cstr);
 	}
 #endif
 
@@ -249,8 +267,8 @@ static void
 usage(void)
 {
 	fprintf(stderr, "Usage: sslscan [options] [host[:port] ...]\n\n");
+	fprintf(stderr, "  -c, --cipher         Output per-protocol OpenSSL-compatible cipher string.\n");
 	fprintf(stderr, "  --show-failed        List only all ciphers (default lists accepted ciphers).\n");
-	fprintf(stderr, "  --show-cert          Print SSL certificate information.\n");
 	fprintf(stderr, "  --ssl2, --ssl3, --tls1, --tls1.1, --tls1.2\n");
 	fprintf(stderr, "                       Check specified protocol version.\n");
 	fprintf(stderr, "  --no-ssl2, --no-ssl3, --no-tls1, --no-tls1.1, --no-tls1.2\n");
@@ -286,8 +304,8 @@ main(int argc, char *argv[])
 	char *host, *port, *chp;
 
 	struct option opts[] = {
+		{ "cipher",	no_argument,	NULL, 'c' },
 		{ "help",	no_argument,	NULL, 'h' },
-		{ "no-cert",	no_argument,	(int *)&printcert, false },
 		{ "no-failed",	no_argument,	(int *)&printfail, false },
 		{ "no-ssl2",	no_argument,	&nosslflag, SSLSCAN_SSLV2 },
 		{ "no-ssl3",	no_argument,	&nosslflag, SSLSCAN_SSLV3 },
@@ -296,7 +314,6 @@ main(int argc, char *argv[])
 		{ "no-tls1.1",	no_argument,	&nosslflag, SSLSCAN_TLSV1_1 },
 		{ "no-tls1.2",	no_argument,	&nosslflag, SSLSCAN_TLSV1_2 },
 		{ "show-failed", no_argument,	(int *)&printfail, true },
-		{ "show-cert",	no_argument,	(int *)&printcert, true },
 		{ "ssl2",	no_argument,	&sslflag, SSLSCAN_SSLV2 },
 		{ "ssl3",	no_argument,	&sslflag, SSLSCAN_SSLV3 },
 		{ "tls1",	no_argument,	&sslflag, SSLSCAN_TLSV1 },
@@ -306,7 +323,7 @@ main(int argc, char *argv[])
 		{ NULL,		0,		NULL, 0 }
 	};
 
-	while ((ch = getopt_long(argc, argv, "?bh", opts, NULL)) != -1)
+	while ((ch = getopt_long(argc, argv, "?ch", opts, NULL)) != -1)
 		switch(ch) {
 		case 0:
 			if (sslflag != SSLSCAN_NONE) {
@@ -318,6 +335,9 @@ main(int argc, char *argv[])
 				sslversion &= ~nosslflag;
 				sslflag = SSLSCAN_NONE;
 			}
+			break;
+		case 'c':
+			cflag = true;
 			break;
 		case 'h':
 		case '?':
