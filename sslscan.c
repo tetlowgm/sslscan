@@ -27,8 +27,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
-#include <sys/queue.h>
-
 #include <err.h>
 #include <getopt.h>
 #include <netdb.h>
@@ -37,10 +35,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
+#include <unistd.h>
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+
+/* Linux is lame and doesn't have strlcpy and strlcat. */
+#ifdef __linux__
+#include <bsd/string.h>
+#endif
 
 /*
  * OpenSSL 1.0.0 introduced const qualifiers for SSL_METHOD. Try
