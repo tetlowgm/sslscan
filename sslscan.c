@@ -67,11 +67,11 @@
  * We use this for warnings later on.
  */
 #define SSLSCAN_USER_UNSET 0x80
-#define SSLSCAN_SSLV2 0x01
-#define SSLSCAN_SSLV3 0x02
-#define SSLSCAN_TLSV1 0x04
-#define SSLSCAN_TLSV1_1 0x08
-#define SSLSCAN_TLSV1_2 0x10
+#define SSLSCAN_SSLv2 0x01
+#define SSLSCAN_SSLv3 0x02
+#define SSLSCAN_TLSv1 0x04
+#define SSLSCAN_TLSv1_1 0x08
+#define SSLSCAN_TLSv1_2 0x10
 
 bool	 cflag = false;			/* Print the cipher string.	*/
 bool	 printfail = false;		/* Print failed ciphers.	*/
@@ -203,61 +203,32 @@ testhost(const char *host, const char *port)
 
 	/* Test for server preferred ciphers. */
 	printf("  Server cipher order:\n");
+#define SCAN_PROTO(proto) 								\
+	do { if (sslversion & SSLSCAN_##proto) {					\
+		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);		\
+		strlcpy(cstr, "", CIPHERSTRLEN);					\
+		testciphers(&h, proto##_client_method(), cipherstr, cstr);		\
+		if (printfail)								\
+			unsupportedcipherlist(proto##_client_method(), cipherstr);	\
+		if (cflag && cstr[0] != '\0')						\
+			printf("  " #proto " Cipher String:\n    %s\n", cstr);		\
+	} } while(0)
 #ifdef SSL_TXT_TLSV1_2
-	if (sslversion & SSLSCAN_TLSV1_2) {
-		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		strlcpy(cstr, "", CIPHERSTRLEN);
-		testciphers(&h, TLSv1_2_client_method(), cipherstr, cstr);
-		if (printfail)
-			unsupportedcipherlist(TLSv1_2_client_method(), cipherstr);
-		if (cflag)
-			printf("  TLSv1.2 Cipher String:\n    %s\n", cstr);
-	}
+	SCAN_PROTO(TLSv1_2);
 #endif
 #ifdef SSL_TXT_TLSV1_1
-	if (sslversion & SSLSCAN_TLSV1_1) {
-		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		strlcpy(cstr, "", CIPHERSTRLEN);
-		testciphers(&h, TLSv1_1_client_method(), cipherstr, cstr);
-		if (printfail)
-			unsupportedcipherlist(TLSv1_1_client_method(), cipherstr);
-		if (cflag)
-			printf("  TLSv1.1 Cipher String:\n    %s\n", cstr);
-	}
+	SCAN_PROTO(TLSv1_1);
 #endif
 #ifdef SSL_TXT_TLSV1
-	if (sslversion & SSLSCAN_TLSV1) {
-		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		strlcpy(cstr, "", CIPHERSTRLEN);
-		testciphers(&h, TLSv1_client_method(), cipherstr, cstr);
-		if (printfail)
-			unsupportedcipherlist(TLSv1_client_method(), cipherstr);
-		if (cflag)
-			printf("  TLSv1 Cipher String:\n    %s\n", cstr);
-	}
+	SCAN_PROTO(TLSv1);
 #endif
 #ifdef SSL_TXT_SSLV3
-	if (sslversion & SSLSCAN_SSLV3) {
-		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		strlcpy(cstr, "", CIPHERSTRLEN);
-		testciphers(&h, SSLv3_client_method(), cipherstr, cstr);
-		if (printfail)
-			unsupportedcipherlist(SSLv3_client_method(), cipherstr);
-		if (cflag)
-			printf("  SSLv3 Cipher String:\n    %s\n", cstr);
-	}
+	SCAN_PROTO(SSLv3);
 #endif
 #ifdef SSL_TXT_SSLV2
-	if (sslversion & SSLSCAN_SSLV2) {
-		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);
-		strlcpy(cstr, "", CIPHERSTRLEN);
-		testciphers(&h, SSLv2_client_method(), cipherstr, cstr);
-		if (printfail)
-			unsupportedcipherlist(SSLv2_client_method(), cipherstr);
-		if (cflag)
-			printf("  SSLv2 Cipher String:\n    %s\n", cstr);
-	}
+	SCAN_PROTO(SSLv2);
 #endif
+#undef SCAN_PROTO
 
 	freeaddrinfo(h.hostinfo);
 	return(true);
@@ -307,19 +278,19 @@ main(int argc, char *argv[])
 		{ "cipher",	no_argument,	NULL, 'c' },
 		{ "help",	no_argument,	NULL, 'h' },
 		{ "no-failed",	no_argument,	(int *)&printfail, false },
-		{ "no-ssl2",	no_argument,	&nosslflag, SSLSCAN_SSLV2 },
-		{ "no-ssl3",	no_argument,	&nosslflag, SSLSCAN_SSLV3 },
-		{ "no-tls1",	no_argument,	&nosslflag, SSLSCAN_TLSV1 },
-		{ "no-tls1.0",	no_argument,	&nosslflag, SSLSCAN_TLSV1 },
-		{ "no-tls1.1",	no_argument,	&nosslflag, SSLSCAN_TLSV1_1 },
-		{ "no-tls1.2",	no_argument,	&nosslflag, SSLSCAN_TLSV1_2 },
+		{ "no-ssl2",	no_argument,	&nosslflag, SSLSCAN_SSLv2 },
+		{ "no-ssl3",	no_argument,	&nosslflag, SSLSCAN_SSLv3 },
+		{ "no-tls1",	no_argument,	&nosslflag, SSLSCAN_TLSv1 },
+		{ "no-tls1.0",	no_argument,	&nosslflag, SSLSCAN_TLSv1 },
+		{ "no-tls1.1",	no_argument,	&nosslflag, SSLSCAN_TLSv1_1 },
+		{ "no-tls1.2",	no_argument,	&nosslflag, SSLSCAN_TLSv1_2 },
 		{ "show-failed", no_argument,	(int *)&printfail, true },
-		{ "ssl2",	no_argument,	&sslflag, SSLSCAN_SSLV2 },
-		{ "ssl3",	no_argument,	&sslflag, SSLSCAN_SSLV3 },
-		{ "tls1",	no_argument,	&sslflag, SSLSCAN_TLSV1 },
-		{ "tls1.0",	no_argument,	&sslflag, SSLSCAN_TLSV1 },
-		{ "tls1.1",	no_argument,	&sslflag, SSLSCAN_TLSV1_1 },
-		{ "tls1.2",	no_argument,	&sslflag, SSLSCAN_TLSV1_2 },
+		{ "ssl2",	no_argument,	&sslflag, SSLSCAN_SSLv2 },
+		{ "ssl3",	no_argument,	&sslflag, SSLSCAN_SSLv3 },
+		{ "tls1",	no_argument,	&sslflag, SSLSCAN_TLSv1 },
+		{ "tls1.0",	no_argument,	&sslflag, SSLSCAN_TLSv1 },
+		{ "tls1.1",	no_argument,	&sslflag, SSLSCAN_TLSv1_1 },
+		{ "tls1.2",	no_argument,	&sslflag, SSLSCAN_TLSv1_2 },
 		{ NULL,		0,		NULL, 0 }
 	};
 
