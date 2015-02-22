@@ -84,30 +84,126 @@ struct sslhost {
 	struct addrinfo *hostinfo;
 };
 
+enum	{ PROXY_NULL, PROXY_SOCKS5 } proxytype = PROXY_NULL;
+bool	proxydns = false;		/* Should we proxy DNS requests. */
+struct sslhost proxy;
+
+static int	hostconnect(struct sslhost *);
+static int	socksconnect(struct sslhost *);
 static SSL *	sslsetup(SSL_CONST SSL_METHOD *, const char *);
-static int	tcpconnect(struct sslhost *);
+static int	tcpconnect(struct sslhost *, bool);
 static void	testciphers(struct sslhost *, SSL_CONST SSL_METHOD *, char *, char *);
 static bool	testhost(const char *, const char *);
 static void	unsupportedcipherlist(SSL_CONST SSL_METHOD *, const char *);
 static void	usage(void);
 
 static int
-tcpconnect(struct sslhost* h)
+tcpconnect(struct sslhost *h, bool hardfail)
 {
 	int fd;
 
-	/* If OpenSSL didn't suck so bad, I wouldn't have to do a lot of this myself. */
 	fd = socket(h->hostinfo->ai_family, h->hostinfo->ai_socktype, h->hostinfo->ai_protocol);
 	if (fd < 0)
 		errx(EX_OSERR, "Could not open socket.");
 
 	/* Should this be a bail or warn and continue? */
 	if ((connect(fd, h->hostinfo->ai_addr, h->hostinfo->ai_addrlen)) < 0) {
-		warn("Could not open a connection to %s:%s", h->name, h->port);
-		return(-1);
+		if (hardfail)
+			err(EX_UNAVAILABLE, "Could not open a connection to %s:%s", h->name, h->port);
+		else {
+			warn("Could not open a connection to %s:%s", h->name, h->port);
+			return(-1);
+		}
 	}
 
 	return(fd);
+}
+
+static int
+socksconnect(struct sslhost *h)
+{
+	int fd, ret, i;
+	size_t len, hlen;
+	uint16_t hport;
+	struct servent *e;
+	unsigned char socksbuf[600];
+
+	fd = tcpconnect(&proxy, true);
+	memset(&socksbuf, 0, 600);
+
+	/* From RFC 1928:
+	 * +----+----------+----------+
+	 * |VER | NMETHODS | METHODS  |
+	 * +----+----------+----------+
+	 * | 1  |    1     | 1 to 255 |
+	 * +----+----------+----------+
+	 */
+	len = 0;
+	socksbuf[len++] = 0x05; /* VER */
+	socksbuf[len++] = 0x01; /* NMETHODS */
+	socksbuf[len++] = 0x00; /* METHODS - X'00' == NO AUTHENTICATION REQUIRED */
+	send(fd, &socksbuf, len, 0);
+	ret = recv(fd, &socksbuf, 600, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "SOCKS5 connect failure");
+	else if (ret < 2 || socksbuf[0] != 0x05 || socksbuf[1] != 0x00)
+		errx(EX_PROTOCOL, "SOCKS5 connect failure");
+
+	/* +----+-----+-------+------+----------+----------+
+	 * |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+	 * +----+-----+-------+------+----------+----------+
+	 * | 1  |  1  | X'00' |  1   | Variable |    2     |
+	 * +----+-----+-------+------+----------+----------+
+	 */
+	len = 0;
+	socksbuf[len++] = 0x05; /* VER */
+	socksbuf[len++] = 0x01; /* CMD - X'01' == CONNECT */
+	socksbuf[len++] = 0x00; /* RSV - Reserved always X'00' */
+	if (proxydns) {
+		hlen = strlen(h->name);
+		if (h->port[0] >= '0' && h->port[0] <= '9') {
+			if ((hport = strtol(h->port, NULL, 0)) == 0)
+				err(EX_UNAVAILABLE, "Unable to resolve proxy port");
+		} else {
+			if ((e = getservbyname(h->port, NULL)) == NULL)
+				errx(EX_UNAVAILABLE, "Unable to resolve proxy port");
+			hport = ntohs((uint16_t)e->s_port);
+		}
+
+		socksbuf[len++] = 0x03; /* ATYP - X'03' == DOMAINNAME */
+		socksbuf[len++] = hlen;
+		memcpy(socksbuf + len, h->name, hlen);
+		len += hlen;
+		socksbuf[len++] = (unsigned char)((hport >> 8) & 0xff);
+		socksbuf[len++] = (unsigned char)(hport & 0xff);
+	}
+	send(fd, &socksbuf, len, 0);
+	ret = recv(fd, &socksbuf, 10, 0);
+#if 0
+	for (i=0; i < ret; i++)
+		printf("%02x ", socksbuf[i]);
+	printf("\n");
+#endif
+	if (ret == -1)
+		err(EX_PROTOCOL, "SOCKS5 connect failure");
+	else if (ret < 10 || socksbuf[0] != 0x05 || socksbuf[1] != 0x00)
+		errx(EX_PROTOCOL, "SOCKS5 connect failure: %d", socksbuf[1]);
+	return(fd);
+}
+
+static int
+hostconnect(struct sslhost *h)
+{
+	switch (proxytype) {
+	case PROXY_NULL:
+		return(tcpconnect(h, false));
+		break;
+	case PROXY_SOCKS5:
+		return(socksconnect(h));
+		break;
+	default:
+		return(-1);
+	}
 }
 
 static SSL *
@@ -154,7 +250,7 @@ testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers, char *
 
 	ssl = sslsetup(meth, ciphers);
 
-	if ((fd = tcpconnect(h)) < 0)
+	if ((fd = hostconnect(h)) < 0)
 		return;
 
 	if ((bio = BIO_new_socket(fd, BIO_NOCLOSE)) == NULL)
@@ -190,16 +286,22 @@ testhost(const char *host, const char *port)
 	h.name = host;
 	h.port = port;
 
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = PF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	error = getaddrinfo(h.name, h.port, &hints, &(h.hostinfo));
-	if (error) {
-		warnx("Could not resolve hostname %s: %s", h.name, gai_strerror(error));
-		return(false);
-	}
+	if (proxy.name == NULL || proxydns == false) {
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = PF_UNSPEC;
+		hints.ai_socktype = SOCK_STREAM;
+		error = getaddrinfo(h.name, h.port, &hints, &(h.hostinfo));
+		if (error) {
+			warnx("Could not resolve hostname %s: %s", h.name, gai_strerror(error));
+			return(false);
+		}
+	} else
+		h.hostinfo = NULL;
 
-	printf("Testing host: %s:%s\n", host, port);
+	printf("Testing host: %s:%s", host, port);
+	if (proxy.name)
+		printf(" via proxy %s:%s", proxy.name, proxy.port);
+	printf("\n");
 
 	/* Test for server preferred ciphers. */
 	printf("  Server cipher order:\n");
@@ -272,7 +374,8 @@ main(int argc, char *argv[])
 {
 	int ch, i, status;
 	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
-	char *host, *port, *chp;
+	char *host, *port, *chp, *xarg = NULL;
+	struct addrinfo hints;
 
 	struct option opts[] = {
 		{ "cipher",	no_argument,	NULL, 'c' },
@@ -284,6 +387,7 @@ main(int argc, char *argv[])
 		{ "no-tls1.0",	no_argument,	&nosslflag, SSLSCAN_TLSv1 },
 		{ "no-tls1.1",	no_argument,	&nosslflag, SSLSCAN_TLSv1_1 },
 		{ "no-tls1.2",	no_argument,	&nosslflag, SSLSCAN_TLSv1_2 },
+		{ "proxy",	required_argument, NULL, 'x' },
 		{ "show-failed", no_argument,	(int *)&printfail, true },
 		{ "ssl2",	no_argument,	&sslflag, SSLSCAN_SSLv2 },
 		{ "ssl3",	no_argument,	&sslflag, SSLSCAN_SSLv3 },
@@ -294,7 +398,7 @@ main(int argc, char *argv[])
 		{ NULL,		0,		NULL, 0 }
 	};
 
-	while ((ch = getopt_long(argc, argv, "?ch", opts, NULL)) != -1)
+	while ((ch = getopt_long(argc, argv, "?chx:", opts, NULL)) != -1)
 		switch(ch) {
 		case 0:
 			if (sslflag != SSLSCAN_NONE) {
@@ -310,6 +414,9 @@ main(int argc, char *argv[])
 		case 'c':
 			cflag = true;
 			break;
+		case 'x':
+			xarg = optarg;
+			break;
 		case 'h':
 		case '?':
 		default:
@@ -320,6 +427,60 @@ main(int argc, char *argv[])
 
 	if (argc == 0)
 		usage();
+
+	proxy.name = NULL;
+	proxy.port = NULL;
+	proxy.hostinfo = NULL;
+
+	if (xarg) {
+		if (strncmp(xarg, "socks5://", 9) == 0) {
+			xarg += 9;
+			proxytype = PROXY_SOCKS5;
+			proxydns = false;
+		} else if (strncmp(xarg, "socks5h://", 10) == 0) {
+			xarg += 10;
+			proxytype = PROXY_SOCKS5;
+			proxydns = true;
+		} else {
+			fprintf(stderr, "Unrecognized proxy option: %s\n", xarg);
+			usage();
+		}
+
+		switch (proxytype) {
+		case PROXY_SOCKS5:
+			/* XXX: User:pass support? */
+			if (strchr(xarg, '@') != NULL)
+				errx(EX_SOFTWARE, "SOCKS5 proxy authentication not supported.");
+
+			proxy.port = "socks";
+			/* Check for a raw IPv6 address enclosed in brackets [::1]. */
+			if (xarg[0] == '[') {
+				/* That said, we don't actually want the brackets. */
+				proxy.name = xarg+1;
+				chp = strchr(xarg, ']');
+				if (chp != NULL)
+					*chp = '\0';
+				if (*(chp+1) == ':') {
+					proxy.port = chp+2;
+				}
+			} else {
+				proxy.name = strsep(&xarg, ":/");
+				if (xarg && xarg[0])
+					proxy.port = strsep(&xarg, "/");
+			}
+
+			printf("proxy: %s, port: %s\n", proxy.name, proxy.port);
+			memset(&hints, 0, sizeof(hints));
+			hints.ai_family = PF_UNSPEC;
+			hints.ai_socktype = SOCK_STREAM;
+			status = getaddrinfo(proxy.name, proxy.port, &hints, &(proxy.hostinfo));
+			if (status)
+				errx(EX_NOHOST, "Could not resolve proxy host %s: %s", proxy.name, gai_strerror(status));
+			break;
+		default:
+			; /* Nothing; */
+		}
+	}
 
 	SSL_load_error_strings();
 	SSL_library_init();
