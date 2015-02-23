@@ -27,6 +27,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <netinet/in.h>
+
 #include <err.h>
 #include <getopt.h>
 #include <netdb.h>
