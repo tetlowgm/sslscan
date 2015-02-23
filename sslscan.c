@@ -126,6 +126,8 @@ socksconnect(struct sslhost *h)
 	size_t len, hlen;
 	uint16_t hport;
 	struct servent *e;
+	struct sockaddr_in *addr_in;
+	struct sockaddr_in6 *addr_in6;
 	unsigned char socksbuf[600];
 
 	fd = tcpconnect(&proxy, true);
@@ -142,7 +144,12 @@ socksconnect(struct sslhost *h)
 	socksbuf[len++] = 0x05; /* VER */
 	socksbuf[len++] = 0x01; /* NMETHODS */
 	socksbuf[len++] = 0x00; /* METHODS - X'00' == NO AUTHENTICATION REQUIRED */
-	send(fd, &socksbuf, len, 0);
+	ret = send(fd, &socksbuf, len, 0);
+	if (ret == -1)
+		err(EX_UNAVAILABLE, "Unable to send initial SOCKS5 request");
+	if (ret != len)
+		errx(EX_PROTOCOL, "Unable to send full request to SOCKS5 server");
+
 	ret = recv(fd, &socksbuf, 600, 0);
 	if (ret == -1)
 		err(EX_PROTOCOL, "SOCKS5 connect failure");
@@ -161,29 +168,50 @@ socksconnect(struct sslhost *h)
 	socksbuf[len++] = 0x00; /* RSV - Reserved always X'00' */
 	if (proxydns) {
 		hlen = strlen(h->name);
-		if (h->port[0] >= '0' && h->port[0] <= '9') {
-			if ((hport = strtol(h->port, NULL, 0)) == 0)
-				err(EX_UNAVAILABLE, "Unable to resolve proxy port");
-		} else {
-			if ((e = getservbyname(h->port, NULL)) == NULL)
-				errx(EX_UNAVAILABLE, "Unable to resolve proxy port");
-			hport = ntohs((uint16_t)e->s_port);
-		}
 
 		socksbuf[len++] = 0x03; /* ATYP - X'03' == DOMAINNAME */
 		socksbuf[len++] = hlen;
 		memcpy(socksbuf + len, h->name, hlen);
 		len += hlen;
-		socksbuf[len++] = (unsigned char)((hport >> 8) & 0xff);
-		socksbuf[len++] = (unsigned char)(hport & 0xff);
+	} else {
+		switch (h->hostinfo->ai_family) {
+		case AF_INET:
+			addr_in = (struct sockaddr_in*)h->hostinfo->ai_addr;
+
+			socksbuf[len++] = 0x01; /* ATYP - X'01' == IP V4 address */
+			for(i = 0; i < 4; i++)
+				socksbuf[len++] = ((unsigned char*)&addr_in->sin_addr.s_addr)[i];
+			break;
+		case AF_INET6:
+			addr_in6 = (struct sockaddr_in6*)h->hostinfo->ai_addr;
+
+			socksbuf[len++] = 0x04; /* ATYP - X'04' == IP V6 address */
+			for(i = 0; i < 16; i++)
+				socksbuf[len++] = ((unsigned char*)&addr_in6->sin6_addr.s6_addr)[i];
+			break;
+		default:
+			errx(EX_SOFTWARE, "Unknown proxy address family");
+		}
 	}
-	send(fd, &socksbuf, len, 0);
+
+	if (h->port[0] >= '0' && h->port[0] <= '9') {
+		if ((hport = strtol(h->port, NULL, 0)) == 0)
+			err(EX_UNAVAILABLE, "Unable to resolve proxy port");
+	} else {
+		if ((e = getservbyname(h->port, NULL)) == NULL)
+			errx(EX_UNAVAILABLE, "Unable to resolve proxy port");
+		hport = ntohs((uint16_t)e->s_port);
+	}
+	socksbuf[len++] = (unsigned char)((hport >> 8) & 0xff);
+	socksbuf[len++] = (unsigned char)(hport & 0xff);
+
+	ret = send(fd, &socksbuf, len, 0);
+	if (ret == -1)
+		err(EX_UNAVAILABLE, "Unable to send initial SOCKS5 request");
+	if (ret != len)
+		errx(EX_PROTOCOL, "Unable to send full request to SOCKS5 server");
+
 	ret = recv(fd, &socksbuf, 10, 0);
-#if 0
-	for (i=0; i < ret; i++)
-		printf("%02x ", socksbuf[i]);
-	printf("\n");
-#endif
 	if (ret == -1)
 		err(EX_PROTOCOL, "SOCKS5 connect failure");
 	else if (ret < 10 || socksbuf[0] != 0x05 || socksbuf[1] != 0x00)
@@ -461,7 +489,8 @@ main(int argc, char *argv[])
 				if (chp != NULL)
 					*chp = '\0';
 				if (*(chp+1) == ':') {
-					proxy.port = chp+2;
+					chp += 2;
+					proxy.port = strsep(&chp, "/");
 				}
 			} else {
 				proxy.name = strsep(&xarg, ":/");
