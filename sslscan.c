@@ -371,6 +371,9 @@ usage(void)
 {
 	fprintf(stderr, "Usage: sslscan [options] [host[:port] ...]\n\n");
 	fprintf(stderr, "  -c, --cipher         Output per-protocol OpenSSL-compatible cipher string.\n");
+	fprintf(stderr, "  -x, --proxy <proxy>  Use a proxy to connect to the server. Valid formats:\n");
+	fprintf(stderr, "                       socks5://localhost:1080/ -- Uses SOCKS5 proxy.\n");
+	fprintf(stderr, "                       socks5h://localhost:1080/ -- Uses SOCKS5 proxy with DNS tunnelling.\n");
 	fprintf(stderr, "  --show-failed        List only all ciphers (default lists accepted ciphers).\n");
 	fprintf(stderr, "  --ssl2, --ssl3, --tls1, --tls1.1, --tls1.2\n");
 	fprintf(stderr, "                       Check specified protocol version.\n");
