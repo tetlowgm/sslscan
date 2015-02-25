@@ -354,10 +354,10 @@ testhost(const char *host, const char *port)
 #ifdef SSL_TXT_TLSV1
 	SCAN_PROTO(TLSv1);
 #endif
-#ifdef SSL_TXT_SSLV3
+#if defined(SSL_TXT_SSLV3) && !defined(OPENSSL_NO_SSL3)
 	SCAN_PROTO(SSLv3);
 #endif
-#ifdef SSL_TXT_SSLV2
+#if defined(SSL_TXT_SSLV2) && !defined(OPENSSL_NO_SSL2)
 	SCAN_PROTO(SSLv2);
 #endif
 #undef SCAN_PROTO
@@ -388,10 +388,10 @@ usage(void)
 #ifdef SSL_TXT_TLSV1
 	fprintf(stderr, " TLSv1.0");
 #endif
-#ifdef SSL_TXT_SSLV3
+#if defined(SSL_TXT_SSLV3) && !defined(OPENSSL_NO_SSL3)
 	fprintf(stderr, " SSLv3");
 #endif
-#ifdef SSL_TXT_SSLV2
+#if defined(SSL_TXT_SSLV2) && !defined(OPENSSL_NO_SSL2)
 	fprintf(stderr, " SSLv2");
 #endif
 	fprintf(stderr, "\n");
