@@ -45,7 +45,7 @@
 
 /* Linux is lame and doesn't have strlcpy and strlcat. */
 #ifdef __linux__
-#include <bsd/string.h>
+#	define LAME
 #endif
 
 /*
@@ -291,11 +291,19 @@ testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers, char *
 
 	if (ret == 1) {
 		printf("    Accepted    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl, NULL), SSL_get_cipher_name(ssl));
+#ifdef	LAME
+		strncat(ciphers, ":!", CIPHERSTRLEN - strlen(ciphers) - 1);
+		strncat(ciphers, SSL_get_cipher_name(ssl), CIPHERSTRLEN - strlen(ciphers) - 1);
+		if (cstr[0] != '\0')
+			strncat(cstr, ":", CIPHERSTRLEN - strlen(cstr) - 1);
+		strncat(cstr, SSL_get_cipher_name(ssl), CIPHERSTRLEN - strlen(cstr) - 1);
+#else
 		strlcat(ciphers, ":!", CIPHERSTRLEN);
 		strlcat(ciphers, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
 		if (cstr[0] != '\0')
 			strlcat(cstr, ":", CIPHERSTRLEN);
 		strlcat(cstr, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
+#endif
 		SSL_shutdown(ssl);
 	}
 	SSL_free(ssl);
@@ -335,6 +343,20 @@ testhost(const char *host, const char *port)
 
 	/* Test for server preferred ciphers. */
 	printf("  Server cipher order:\n");
+#ifdef	LAME
+#define SCAN_PROTO(proto) 								\
+	do { if (sslversion & SSLSCAN_##proto) {					\
+		strncpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN - 1);            \
+		cipherstr[CIPHERSTRLEN - 1] = '\0';                                     \
+		strncpy(cstr, "", CIPHERSTRLEN - 1);                                    \
+		cstr[CIPHERSTRLEN - 1] = '\0';                                          \
+		testciphers(&h, proto##_client_method(), cipherstr, cstr);		\
+		if (printfail)								\
+			unsupportedcipherlist(proto##_client_method(), cipherstr);	\
+		if (cflag && cstr[0] != '\0')						\
+			printf("  " #proto " Cipher String:\n    %s\n", cstr);		\
+	} } while(0)
+#else
 #define SCAN_PROTO(proto) 								\
 	do { if (sslversion & SSLSCAN_##proto) {					\
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);		\
@@ -345,6 +367,7 @@ testhost(const char *host, const char *port)
 		if (cflag && cstr[0] != '\0')						\
 			printf("  " #proto " Cipher String:\n    %s\n", cstr);		\
 	} } while(0)
+#endif
 #ifdef SSL_TXT_TLSV1_2
 	SCAN_PROTO(TLSv1_2);
 #endif
