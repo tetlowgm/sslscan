@@ -1,4 +1,6 @@
 PROG=	sslscan
+SRCS=	sslscan.c	\
+	connect.c
 NO_MAN=
 
 DESTDIR= /usr/local/bin

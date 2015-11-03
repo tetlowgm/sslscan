@@ -1,5 +1,6 @@
-PROG = sslscan
-OBJS = $(PROG).o
+PROG =	sslscan
+OBJS =	$(PROG).o \
+	 connect.o
 PREFIX ?= /usr/local
 BINPATH ?= $(PREFIX)/bin
 MANPATH ?= $(PREFIX)/man/man1
