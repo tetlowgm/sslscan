@@ -34,6 +34,7 @@ struct sslhost {
 };
 
 enum	proxy_enum { PROXY_NULL, PROXY_SOCKS5 };
+enum	starttls_enum { TLS_NONE, TLS_SMTP };
 
 int	hostconnect(struct sslhost *);
 

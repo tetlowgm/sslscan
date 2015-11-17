@@ -82,6 +82,7 @@ bool	 printfail = false;		/* Print failed ciphers.	*/
 int	 sslversion = SSLSCAN_ALL;
 SSL_CTX	*ssl_ctx;
 
+enum	starttls_enum tlstype = TLS_NONE;
 enum	proxy_enum proxytype = PROXY_NULL;
 bool	proxydns = false;		/* Should we proxy DNS requests. */
 struct sslhost proxy;
@@ -195,6 +196,8 @@ testhost(const char *host, const char *port)
 	printf("Testing host: %s:%s", host, port);
 	if (proxy.name)
 		printf(" via proxy %s:%s", proxy.name, proxy.port);
+	if (tlstype)
+		printf(" with STARTTLS");
 	printf("\n");
 
 	/* Test for server preferred ciphers. */
@@ -250,6 +253,7 @@ usage(void)
 {
 	fprintf(stderr, "Usage: sslscan [options] [host[:port] ...]\n\n");
 	fprintf(stderr, "  -c, --cipher         Output per-protocol OpenSSL-compatible cipher string.\n");
+	fprintf(stderr, "  -s, --starttls <type> STARTTLS protocol supported: smtp\n");
 	fprintf(stderr, "  -x, --proxy <proxy>  Use a proxy to connect to the server. Valid formats:\n");
 	fprintf(stderr, "                       socks5://localhost:1080/ -- Uses SOCKS5 proxy.\n");
 	fprintf(stderr, "                       socks5h://localhost:1080/ -- Uses SOCKS5 proxy with DNS tunnelling.\n");
@@ -286,7 +290,7 @@ main(int argc, char *argv[])
 {
 	int ch, i, status;
 	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
-	char *host, *port, *chp, *xarg = NULL;
+	char *host, *port, *chp, *sarg = NULL, *xarg = NULL;
 	struct addrinfo hints;
 
 	struct option opts[] = {
@@ -303,6 +307,7 @@ main(int argc, char *argv[])
 		{ "show-failed", no_argument,	(int *)&printfail, true },
 		{ "ssl2",	no_argument,	&sslflag, SSLSCAN_SSLv2 },
 		{ "ssl3",	no_argument,	&sslflag, SSLSCAN_SSLv3 },
+		{ "starttls",	required_argument, NULL, 's' },
 		{ "tls1",	no_argument,	&sslflag, SSLSCAN_TLSv1 },
 		{ "tls1.0",	no_argument,	&sslflag, SSLSCAN_TLSv1 },
 		{ "tls1.1",	no_argument,	&sslflag, SSLSCAN_TLSv1_1 },
@@ -310,7 +315,7 @@ main(int argc, char *argv[])
 		{ NULL,		0,		NULL, 0 }
 	};
 
-	while ((ch = getopt_long(argc, argv, "?chx:", opts, NULL)) != -1)
+	while ((ch = getopt_long(argc, argv, "?chs:x:", opts, NULL)) != -1)
 		switch(ch) {
 		case 0:
 			if (sslflag != SSLSCAN_NONE) {
@@ -326,6 +331,9 @@ main(int argc, char *argv[])
 		case 'c':
 			cflag = true;
 			break;
+		case 's':
+			sarg = optarg;
+			break;
 		case 'x':
 			xarg = optarg;
 			break;
@@ -339,6 +347,17 @@ main(int argc, char *argv[])
 
 	if (argc == 0)
 		usage();
+
+	if (sarg) {
+		if (strncmp(sarg, "smtp", 4) == 0) {
+			tlstype = TLS_SMTP;
+		} else if (strncmp(sarg, "none", 4) == 0) {
+			tlstype = TLS_NONE;
+		} else {
+			fprintf(stderr, "Unrecognized STARTTLS option: %s\n", sarg);
+			usage();
+		}
+	}
 
 	proxy.name = NULL;
 	proxy.port = NULL;

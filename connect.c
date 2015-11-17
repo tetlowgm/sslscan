@@ -32,32 +32,86 @@
 #include <err.h>
 #include <netdb.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
 
 #include "sslscan_priv.h"
 
+#if !defined(BUFSIZ)
+#	define BUFSIZ 1024
+#endif
+
+extern enum	starttls_enum tlstype;
 extern bool	proxydns;
 extern enum	proxy_enum proxytype;
 extern struct sslhost proxy;
 
+static void	smtpconnect(int);
 static int	socksconnect(struct sslhost *);
 static int	tcpconnect(struct sslhost *, bool);
 
 int
 hostconnect(struct sslhost *h)
 {
+	int fd = -1;
+
 	switch (proxytype) {
 	case PROXY_NULL:
-		return(tcpconnect(h, false));
+		fd = tcpconnect(h, false);
 		break;
 	case PROXY_SOCKS5:
-		return(socksconnect(h));
+		fd = socksconnect(h);
 		break;
-	default:
-		return(-1);
 	}
+
+	switch (tlstype) {
+	case TLS_NONE:
+		/* Don't actually need to do anything. */
+		break;
+	case TLS_SMTP:
+		smtpconnect(fd);
+		break;
+	}
+
+	return(fd);
+}
+
+static void
+smtpconnect(int fd)
+{
+	char buf[BUFSIZ];
+	int ret;
+
+	memset(buf, 0, BUFSIZ);
+	ret = recv(fd, buf, BUFSIZ - 1, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
+	else if (ret < 3 || strncmp(buf, "220", 3) != 0)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
+
+	ret = send(fd, "EHLO sslscan\r\n", 14, 0);
+	if (ret == -1 || ret != 14)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
+
+	memset(buf, 0, BUFSIZ);
+	ret = recv(fd, buf, BUFSIZ - 1, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
+	else if (ret < 3 || sscanf(buf, "250-STARTTLS") != 0)
+		err(EX_PROTOCOL, "SMTP server doesn't appear to support STARTTLS");
+
+	ret = send(fd, "STARTTLS\r\n", 10, 0);
+	if (ret == -1 || ret != 10)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
+
+	memset(buf, 0, BUFSIZ);
+	ret = recv(fd, buf, BUFSIZ - 1, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
+	else if (ret < 3 || strncmp(buf, "220", 3) != 0)
+		err(EX_PROTOCOL, "SMTP STARTTLS failure");
 }
 
 static int
