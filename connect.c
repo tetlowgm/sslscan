@@ -39,8 +39,8 @@
 
 #include "sslscan_priv.h"
 
-#if !defined(BUFSIZ)
-#	define BUFSIZ 1024
+#ifndef BUFSIZ
+#define BUFSIZ 1024
 #endif
 
 extern enum	starttls_enum tlstype;
