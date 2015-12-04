@@ -48,6 +48,7 @@ extern bool	proxydns;
 extern enum	proxy_enum proxytype;
 extern struct sslhost proxy;
 
+static void	mysqlconnect(int);
 static void	smtpconnect(int);
 static int	socksconnect(struct sslhost *);
 static int	tcpconnect(struct sslhost *, bool);
@@ -67,6 +68,9 @@ hostconnect(struct sslhost *h)
 	}
 
 	switch (tlstype) {
+	case TLS_MYSQL:
+		mysqlconnect(fd);
+		break;
 	case TLS_NONE:
 		/* Don't actually need to do anything. */
 		break;
@@ -76,6 +80,37 @@ hostconnect(struct sslhost *h)
 	}
 
 	return(fd);
+}
+
+static void
+mysqlconnect(int fd)
+{
+	/*
+	 * See MySQL internal documentation site about handshake setup.
+	 * https://dev.mysql.com/doc/internals/en/ssl-handshake.html
+	 * https://dev.mysql.com/doc/internals/en/ssl.html
+	 * https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeResponse
+	 * https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::SSLRequest
+	 *
+	 * These particular bytes were ripped from the wire on a client connecting
+	 * to a server with SSL enabled.
+	 */
+	const char mysqlssl[] = { 0x20, 0x00, 0x00, 0x01, 0x85, 0xae, 0x7f, 0x00,
+                                  0x00, 0x00, 0x00, 0x01, 0x21, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00};
+	char buf[BUFSIZ];
+	int ret;
+
+	memset(buf, 0, BUFSIZ);
+	ret = recv(fd, buf, BUFSIZ - 1, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "MySQL STARTTLS failure");
+
+	ret = send(fd, mysqlssl, sizeof(mysqlssl), 0);
+	if (ret == -1 || ret != 36)
+		err(EX_PROTOCOL, "MySQL STARTTLS failure");
 }
 
 static void

@@ -253,7 +253,7 @@ usage(void)
 {
 	fprintf(stderr, "Usage: sslscan [options] [host[:port] ...]\n\n");
 	fprintf(stderr, "  -c, --cipher         Output per-protocol OpenSSL-compatible cipher string.\n");
-	fprintf(stderr, "  -s, --starttls <type> STARTTLS protocol supported: smtp\n");
+	fprintf(stderr, "  -s, --starttls <type> STARTTLS protocol supported: mysql smtp\n");
 	fprintf(stderr, "  -x, --proxy <proxy>  Use a proxy to connect to the server. Valid formats:\n");
 	fprintf(stderr, "                       socks5://localhost:1080/ -- Uses SOCKS5 proxy.\n");
 	fprintf(stderr, "                       socks5h://localhost:1080/ -- Uses SOCKS5 proxy with DNS tunnelling.\n");
@@ -351,6 +351,8 @@ main(int argc, char *argv[])
 	if (sarg) {
 		if (strncmp(sarg, "smtp", 4) == 0) {
 			tlstype = TLS_SMTP;
+		} else if (strncmp(sarg, "mysql", 5) == 0) {
+			tlstype = TLS_MYSQL;
 		} else if (strncmp(sarg, "none", 4) == 0) {
 			tlstype = TLS_NONE;
 		} else {
