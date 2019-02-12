@@ -48,6 +48,7 @@ extern bool	proxydns;
 extern enum	proxy_enum proxytype;
 extern struct sslhost proxy;
 
+static void	ftpconnect(int);
 static void	mysqlconnect(int);
 static void	smtpconnect(int);
 static int	socksconnect(struct sslhost *);
@@ -68,6 +69,9 @@ hostconnect(struct sslhost *h)
 	}
 
 	switch (tlstype) {
+	case TLS_FTP:
+		ftpconnect(fd);
+		break;
 	case TLS_MYSQL:
 		mysqlconnect(fd);
 		break;
@@ -80,6 +84,31 @@ hostconnect(struct sslhost *h)
 	}
 
 	return(fd);
+}
+
+static void
+ftpconnect(int fd)
+{
+	char buf[BUFSIZ];
+	int ret;
+
+	memset(buf, 0, BUFSIZ);
+	ret = recv(fd, buf, BUFSIZ - 1, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "FTP STARTTLS failure");
+	else if (ret < 3 || strncmp(buf, "220", 3) != 0)
+		err(EX_PROTOCOL, "FTP STARTTLS failure");
+
+	ret = send(fd, "AUTH TLS\r\n", 10, 0);
+	if (ret == -1 || ret != 10)
+		err(EX_PROTOCOL, "FTP STARTTLS failure");
+
+	memset(buf, 0, BUFSIZ);
+	ret = recv(fd, buf, BUFSIZ - 1, 0);
+	if (ret == -1)
+		err(EX_PROTOCOL, "FTP STARTTLS failure");
+	else if (ret < 3 || sscanf(buf, "234") != 0)
+		err(EX_PROTOCOL, "FTP server doesn't appear to support STARTTLS");
 }
 
 static void

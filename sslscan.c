@@ -262,7 +262,7 @@ usage(void)
 {
 	fprintf(stderr, "Usage: sslscan [options] [host[:port] ...]\n\n");
 	fprintf(stderr, "  -c, --cipher         Output per-protocol OpenSSL-compatible cipher string.\n");
-	fprintf(stderr, "  -s, --starttls <type> STARTTLS protocol supported: mysql smtp\n");
+	fprintf(stderr, "  -s, --starttls <type> STARTTLS protocol supported: ftp mysql smtp\n");
 	fprintf(stderr, "  -x, --proxy <proxy>  Use a proxy to connect to the server. Valid formats:\n");
 	fprintf(stderr, "                       socks5://localhost:1080/ -- Uses SOCKS5 proxy.\n");
 	fprintf(stderr, "                       socks5h://localhost:1080/ -- Uses SOCKS5 proxy with DNS tunnelling.\n");
@@ -299,7 +299,7 @@ main(int argc, char *argv[])
 {
 	int ch, i, status;
 	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
-	char *host, *port, *chp, *sarg = NULL, *xarg = NULL;
+	char *defport, *host, *port, *chp, *sarg = NULL, *xarg = NULL;
 	struct addrinfo hints;
 
 	struct option opts[] = {
@@ -360,10 +360,16 @@ main(int argc, char *argv[])
 	if (sarg) {
 		if (strncmp(sarg, "smtp", 4) == 0) {
 			tlstype = TLS_SMTP;
+			defport = "smtp";
 		} else if (strncmp(sarg, "mysql", 5) == 0) {
 			tlstype = TLS_MYSQL;
+			defport = "mysql";
+		} else if (strncmp(sarg, "ftp", 3) == 0) {
+			tlstype = TLS_FTP;
+			defport = "ftp";
 		} else if (strncmp(sarg, "none", 4) == 0) {
 			tlstype = TLS_NONE;
+			defport = "https";
 		} else {
 			fprintf(stderr, "Unrecognized STARTTLS option: %s\n", sarg);
 			usage();
@@ -434,7 +440,7 @@ main(int argc, char *argv[])
 	status = 0;
 	for (i = 0; i < argc; i++) {
 		/* XXX: There is probably a better way to detect a raw IPv6 address. */
-		port = "https";
+		port = defport;
 		/* Check for a raw IPv6 address enclosed in brackets [::1]. */
 		if (argv[i][0] == '[') {
 			/* That said, we don't actually want the brackets. */
