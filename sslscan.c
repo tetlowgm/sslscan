@@ -51,6 +51,15 @@
 #endif
 
 /*
+ * OpenSSL 1.1.0 introduced large changes to the API.
+ */
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+#define SSL_METH TLS_client_method
+#else
+#define SSL_METH SSLv23_client_method
+#endif
+
+/*
  * OpenSSL 1.0.0 introduced const qualifiers for SSL_METHOD. Try
  * to surpress warnings for it for both versions.
  */
@@ -419,7 +428,7 @@ main(int argc, char *argv[])
 	SSL_load_error_strings();
 	SSL_library_init();
 
-	if ((ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
+	if ((ssl_ctx = SSL_CTX_new(SSL_METH())) == NULL)
 		errx(EX_SOFTWARE, "Could not create SSL_CTX object: %s", ERR_error_string(ERR_get_error(), NULL));
 
 	status = 0;
