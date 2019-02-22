@@ -1,7 +1,7 @@
 PROG=	sslscan
 SRCS=	sslscan.c	\
 	connect.c
-NO_MAN=
+MK_MAN=	no
 
 DESTDIR= /usr/local/bin
 DPADD=	${LIBSSL} ${LIBCRYPTO}
