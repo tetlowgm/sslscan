@@ -299,7 +299,7 @@ main(int argc, char *argv[])
 {
 	int ch, i, status;
 	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
-	char *defport, *host, *port, *chp, *sarg = NULL, *xarg = NULL;
+	char *defport = "https", *host, *port, *chp, *sarg = NULL, *xarg = NULL;
 	struct addrinfo hints;
 
 	struct option opts[] = {
