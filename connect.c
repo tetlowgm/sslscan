@@ -123,6 +123,15 @@ mysqlconnect(int fd)
 	 *
 	 * These particular bytes were ripped from the wire on a client connecting
 	 * to a server with SSL enabled.
+	 *
+	 * Integer types are in LSB order.
+	 *
+	 * First 4 bytes are a Protocol::Packet header:
+	 *	https://dev.mysql.com/doc/internals/en/mysql-packet.html
+	 * Remainder is a Protocol::SSLRequest:
+	 *	https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::SSLRequest
+	 * Important flag is CLIENT_SSL (0x00000800) (contained in the 0xae byte below):
+	 *	https://dev.mysql.com/doc/internals/en/capability-flags.html#flag-CLIENT_SSL
 	 */
 	const char mysqlssl[] = { 0x20, 0x00, 0x00, 0x01, 0x85, 0xae, 0x7f, 0x00,
                                   0x00, 0x00, 0x00, 0x01, 0x21, 0x00, 0x00, 0x00,
