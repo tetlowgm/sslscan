@@ -62,6 +62,8 @@
 #define SSLSCAN_TLSv1_1 0x08
 #define SSLSCAN_TLSv1_2 0x10
 
+bool	 ip4flag = false;		/* Force IPv4.			*/
+bool	 ip6flag = false;		/* Force IPv6.			*/
 bool	 cflag = false;			/* Print the cipher string.	*/
 bool	 printfail = false;		/* Print failed ciphers.	*/
 int	 sslversion = SSLSCAN_ALL;
@@ -74,7 +76,7 @@ struct sslhost proxy;
 
 static SSL *	sslsetup(const SSL_METHOD *, const char *);
 static void	testciphers(struct sslhost *, const SSL_METHOD *, char *, char *);
-static bool	testhost(const char *, const char *);
+static bool	testhost(const char *, const char *, const int);
 static void	unsupportedcipherlist(const SSL_METHOD *, const char *);
 static void	usage(void);
 
@@ -148,23 +150,30 @@ testciphers(struct sslhost *h, const SSL_METHOD *meth, char *ciphers, char *cstr
 }
 
 static bool
-testhost(const char *host, const char *port)
+testhost(const char *host, const char *port, const int connfam)
 {
 	int error;
 	struct sslhost h;
 	struct addrinfo hints;
-	char cipherstr[CIPHERSTRLEN], cstr[CIPHERSTRLEN];
+	char cipherstr[CIPHERSTRLEN], cstr[CIPHERSTRLEN], hostaddr[NI_MAXHOST] = "", hostport[NI_MAXSERV] = "";
 
 	h.name = host;
 	h.port = port;
 
 	if (proxy.name == NULL || proxydns == false) {
 		memset(&hints, 0, sizeof(hints));
-		hints.ai_family = PF_UNSPEC;
+		hints.ai_family = connfam;
 		hints.ai_socktype = SOCK_STREAM;
 		error = getaddrinfo(h.name, h.port, &hints, &(h.hostinfo));
 		if (error) {
 			warnx("Could not resolve hostname %s: %s", h.name, gai_strerror(error));
+			return(false);
+		}
+		error = getnameinfo(h.hostinfo->ai_addr, h.hostinfo->ai_addrlen,
+				    hostaddr, NI_MAXHOST, hostport, NI_MAXSERV,
+				    NI_NUMERICHOST | NI_NUMERICSERV);
+		if (error) {
+			warnx("Could not convert hostname to string %s: %s", h.name, gai_strerror(error));
 			return(false);
 		}
 	} else
@@ -176,6 +185,8 @@ testhost(const char *host, const char *port)
 	if (tlstype)
 		printf(" with STARTTLS");
 	printf("\n");
+
+	printf("Connecting to %s on port %s\n", hostaddr, hostport);
 
 	/* Test for server preferred ciphers. */
 	printf("  Server cipher order:\n");
@@ -214,6 +225,8 @@ static void
 usage(void)
 {
 	fprintf(stderr, "Usage: sslscan [options] [host[:port] ...]\n\n");
+	fprintf(stderr, "  -4, --ipv4           Force IPv4.\n");
+	fprintf(stderr, "  -6, --ipv6           Force IPv6.\n");
 	fprintf(stderr, "  -c, --cipher         Output per-protocol OpenSSL-compatible cipher string.\n");
 	fprintf(stderr, "  -s, --starttls <type> STARTTLS protocol supported: ftp mysql smtp\n");
 	fprintf(stderr, "  -x, --proxy <proxy>  Use a proxy to connect to the server. Valid formats:\n");
@@ -251,13 +264,15 @@ int
 main(int argc, char *argv[])
 {
 	int ch, i, status;
-	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE;
+	int sslflag = SSLSCAN_NONE, nosslflag = SSLSCAN_NONE, connfam = PF_UNSPEC;
 	char *defport = "https", *host, *port, *chp, *sarg = NULL, *xarg = NULL;
 	struct addrinfo hints;
 
 	struct option opts[] = {
 		{ "cipher",	no_argument,	NULL, 'c' },
 		{ "help",	no_argument,	NULL, 'h' },
+		{ "ipv4",	no_argument,	NULL, '4' },
+		{ "ipv6",	no_argument,	NULL, '6' },
 		{ "no-failed",	no_argument,	(int *)&printfail, false },
 		{ "no-ssl2",	no_argument,	&nosslflag, SSLSCAN_SSLv2 },
 		{ "no-ssl3",	no_argument,	&nosslflag, SSLSCAN_SSLv3 },
@@ -277,7 +292,7 @@ main(int argc, char *argv[])
 		{ NULL,		0,		NULL, 0 }
 	};
 
-	while ((ch = getopt_long(argc, argv, "?chs:x:", opts, NULL)) != -1)
+	while ((ch = getopt_long(argc, argv, "?46chs:x:", opts, NULL)) != -1)
 		switch(ch) {
 		case 0:
 			if (sslflag != SSLSCAN_NONE) {
@@ -289,6 +304,14 @@ main(int argc, char *argv[])
 				sslversion &= ~nosslflag;
 				sslflag = SSLSCAN_NONE;
 			}
+			break;
+		case '4':
+			ip4flag = true;
+			connfam = PF_INET;
+			break;
+		case '6':
+			ip6flag = true;
+			connfam = PF_INET6;
 			break;
 		case 'c':
 			cflag = true;
@@ -309,6 +332,9 @@ main(int argc, char *argv[])
 
 	if (argc == 0)
 		usage();
+
+	if (ip4flag && ip6flag)
+		connfam = PF_UNSPEC;
 
 	if (sarg) {
 		if (strncmp(sarg, "smtp", 4) == 0) {
@@ -373,7 +399,7 @@ main(int argc, char *argv[])
 
 			printf("proxy: %s, port: %s\n", proxy.name, proxy.port);
 			memset(&hints, 0, sizeof(hints));
-			hints.ai_family = PF_UNSPEC;
+			hints.ai_family = connfam;
 			hints.ai_socktype = SOCK_STREAM;
 			status = getaddrinfo(proxy.name, proxy.port, &hints, &(proxy.hostinfo));
 			if (status)
@@ -405,7 +431,7 @@ main(int argc, char *argv[])
 			if (argv[i] && argv[i][0])
 				port = argv[i];
 		}
-		if (testhost(host, port) == false)
+		if (testhost(host, port, connfam) == false)
 			status++;
 	}
 
