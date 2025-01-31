@@ -1,5 +1,5 @@
 /*-
- *  Copyright (c) 2015 Gordon Tetlow
+ *  Copyright (c) 2015-2025 Gordon Tetlow
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -45,30 +45,6 @@
 
 #include "sslscan_priv.h"
 
-/* Linux is lame and doesn't have strlcpy and strlcat. */
-#ifdef __linux__
-#	define LAME
-#endif
-
-/*
- * OpenSSL 1.1.0 introduced large changes to the API.
- */
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-#define SSL_METH TLS_client_method
-#else
-#define SSL_METH SSLv23_client_method
-#endif
-
-/*
- * OpenSSL 1.0.0 introduced const qualifiers for SSL_METHOD. Try
- * to surpress warnings for it for both versions.
- */
-#if OPENSSL_VERSION_NUMBER >= 0x10000000L
-#define SSL_CONST const
-#else
-#define SSL_CONST
-#endif
-
 /* Maximum length of the cipher string. */
 #define CIPHERSTRLEN 4096
 
@@ -96,14 +72,14 @@ enum	proxy_enum proxytype = PROXY_NULL;
 bool	proxydns = false;		/* Should we proxy DNS requests. */
 struct sslhost proxy;
 
-static SSL *	sslsetup(SSL_CONST SSL_METHOD *, const char *);
-static void	testciphers(struct sslhost *, SSL_CONST SSL_METHOD *, char *, char *);
+static SSL *	sslsetup(const SSL_METHOD *, const char *);
+static void	testciphers(struct sslhost *, const SSL_METHOD *, char *, char *);
 static bool	testhost(const char *, const char *);
-static void	unsupportedcipherlist(SSL_CONST SSL_METHOD *, const char *);
+static void	unsupportedcipherlist(const SSL_METHOD *, const char *);
 static void	usage(void);
 
 static SSL *
-sslsetup(SSL_CONST SSL_METHOD *meth, const char *ciphers)
+sslsetup(const SSL_METHOD *meth, const char *ciphers)
 {
 	SSL *ssl;
 
@@ -120,7 +96,7 @@ sslsetup(SSL_CONST SSL_METHOD *meth, const char *ciphers)
 }
 
 static void
-unsupportedcipherlist(SSL_CONST SSL_METHOD *meth, const char *ciphers)
+unsupportedcipherlist(const SSL_METHOD *meth, const char *ciphers)
 {
 	int i;
 	STACK_OF(SSL_CIPHER) *clist;
@@ -138,7 +114,7 @@ unsupportedcipherlist(SSL_CONST SSL_METHOD *meth, const char *ciphers)
 }
 
 static void
-testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers, char *cstr)
+testciphers(struct sslhost *h, const SSL_METHOD *meth, char *ciphers, char *cstr)
 {
 	int fd, ret;
 	SSL *ssl;
@@ -157,19 +133,11 @@ testciphers(struct sslhost *h, SSL_CONST SSL_METHOD *meth, char *ciphers, char *
 
 	if (ret == 1) {
 		printf("    Accepted    %-7s  %3d bits  %s\n", SSL_get_version(ssl), SSL_get_cipher_bits(ssl, NULL), SSL_get_cipher_name(ssl));
-#ifdef	LAME
-		strncat(ciphers, ":!", CIPHERSTRLEN - strlen(ciphers) - 1);
-		strncat(ciphers, SSL_get_cipher_name(ssl), CIPHERSTRLEN - strlen(ciphers) - 1);
-		if (cstr[0] != '\0')
-			strncat(cstr, ":", CIPHERSTRLEN - strlen(cstr) - 1);
-		strncat(cstr, SSL_get_cipher_name(ssl), CIPHERSTRLEN - strlen(cstr) - 1);
-#else
 		strlcat(ciphers, ":!", CIPHERSTRLEN);
 		strlcat(ciphers, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
 		if (cstr[0] != '\0')
 			strlcat(cstr, ":", CIPHERSTRLEN);
 		strlcat(cstr, SSL_get_cipher_name(ssl), CIPHERSTRLEN);
-#endif
 		SSL_shutdown(ssl);
 	}
 	SSL_free(ssl);
@@ -211,20 +179,6 @@ testhost(const char *host, const char *port)
 
 	/* Test for server preferred ciphers. */
 	printf("  Server cipher order:\n");
-#ifdef	LAME
-#define SCAN_PROTO(proto) 								\
-	do { if (sslversion & SSLSCAN_##proto) {					\
-		strncpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN - 1);            \
-		cipherstr[CIPHERSTRLEN - 1] = '\0';                                     \
-		strncpy(cstr, "", CIPHERSTRLEN - 1);                                    \
-		cstr[CIPHERSTRLEN - 1] = '\0';                                          \
-		testciphers(&h, proto##_client_method(), cipherstr, cstr);		\
-		if (printfail)								\
-			unsupportedcipherlist(proto##_client_method(), cipherstr);	\
-		if (cflag && cstr[0] != '\0')						\
-			printf("  " #proto " Cipher String:\n    %s\n", cstr);		\
-	} } while(0)
-#else
 #define SCAN_PROTO(proto) 								\
 	do { if (sslversion & SSLSCAN_##proto) {					\
 		strlcpy(cipherstr, "ALL:COMPLEMENTOFALL", CIPHERSTRLEN);		\
@@ -235,7 +189,6 @@ testhost(const char *host, const char *port)
 		if (cflag && cstr[0] != '\0')						\
 			printf("  " #proto " Cipher String:\n    %s\n", cstr);		\
 	} } while(0)
-#endif
 #ifdef SSL_TXT_TLSV1_2
 	SCAN_PROTO(TLSv1_2);
 #endif
@@ -431,10 +384,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	SSL_load_error_strings();
-	SSL_library_init();
-
-	if ((ssl_ctx = SSL_CTX_new(SSL_METH())) == NULL)
+	if ((ssl_ctx = SSL_CTX_new(TLS_client_method())) == NULL)
 		errx(EX_SOFTWARE, "Could not create SSL_CTX object: %s", ERR_error_string(ERR_get_error(), NULL));
 
 	status = 0;
